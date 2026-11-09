@@ -31,13 +31,20 @@
     const targetTimestamp = fecha + "T" + hora.substring(0, 2) + ":00";
     let resultado = { error: false, municipio: "Águilas", provincia: "Murcia", temp: "--", hum: "--", wind: "--", wbgt: "--" };
 
-    // 1. Endpoint del archivo histórico de Open-Meteo con los subdominios de datos oficiales reparados
-    const urlClimaOriginal = "https://open-meteo.com" + lat.toFixed(4) + "&longitude=" + lon.toFixed(4) + "&start_date=" + fecha + "&end_date=" + fecha + "&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m&timezone=Europe%2FMadrid";
+    // CONSTRUCTOR NATIVO ROBUSTO: Evita corrupciones de texto o bloqueos de parseo
+    const urlClimaOriginal = new URL("https://open-meteo.com");
+    urlClimaOriginal.searchParams.append("latitude", lat.toFixed(4));
+    urlClimaOriginal.searchParams.append("longitude", lon.toFixed(4));
+    urlClimaOriginal.searchParams.append("start_date", fecha);
+    urlClimaOriginal.searchParams.append("end_date", fecha);
+    urlClimaOriginal.searchParams.append("hourly", "temperature_2m,relative_humidity_2m,wind_speed_10m");
+    urlClimaOriginal.searchParams.append("timezone", "Europe/Madrid");
     
-    // CORRECCIÓN SINTÁCTICA: Formato exacto de consulta proxy para AllOrigins API
-    const urlProxy = "https://allorigins.win" + encodeURIComponent(urlClimaOriginal);
+    // Envolvemos la petición de forma limpia usando la API nativa de objetos URL
+    const urlProxy = new URL("https://allorigins.win");
+    urlProxy.searchParams.append("url", urlClimaOriginal.toString());
 
-    fetch(urlProxy)
+    fetch(urlProxy.toString())
         .then(res => {
             if (res.ok) return res.json();
             throw new Error("La pasarela Proxy está saturada o fuera de línea.");
@@ -78,9 +85,6 @@
 </script>
 </body>
 </html>
-
-
-
 
 
 
