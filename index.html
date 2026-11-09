@@ -4,7 +4,6 @@
 <body>
 <script>
 (function() {
-    // Captura los parámetros dinámicos que le envía el código PHP del TCX
     const params = new URLSearchParams(window.location.search);
     const lat = parseFloat(params.get('lat'));
     const lon = parseFloat(params.get('lon'));
@@ -17,20 +16,18 @@
     }
 
     const horaCorte = hora.substring(0, 2) + ":00:00"; 
-    let resultado = { error: false, municipio: "Zona Rural", provincia: "", temp: "--", hum: "--", wind: "--", wbgt: "--" };
+    let resultado = { error: false, municipio: "Zona Rural", provincia: "España", temp: "--", hum: "--", wind: "--", wbgt: "--" };
 
-    // Construcción limpia de la URL de consulta al satélite histórico consolidado
     const urlClima = "https://open-meteo.com" + lat.toFixed(4) + "&longitude=" + lon.toFixed(4) + "&start_date=" + fecha + "&end_date=" + fecha + "&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m&timezone=Europe%2FMadrid";
+    const urlGeo = "https://open-meteo.com" + lat.toFixed(4) + "&longitude=" + lon.toFixed(4) + "&language=es&format=json";
 
-    // 1. Consulta Geográfica del Municipio por Coordenadas (Geocodificación Libre Abierta)
-    fetch("https://open-meteo.com" + lat.toFixed(4) + "&longitude=" + lon.toFixed(4) + "&language=es&format=json")
+    fetch(urlGeo)
         .then(res => res.json())
         .then(geoData => {
             if (geoData && geoData.results && geoData.results.length > 0) {
                 resultado.municipio = geoData.results[0].name || "Zona Rural";
-                resultado.provincia = geoData.results[0].admin1 || "";
+                resultado.provincia = geoData.results[0].admin1 || "España";
             }
-            // 2. Consulta Meteorológica Real de Internet
             return fetch(urlClima);
         })
         .then(res => {
@@ -49,7 +46,6 @@
                     resultado.wbgt = Math.round((resultado.temp * 0.7) + (resultado.temp * (resultado.hum / 100) * 0.3));
                 }
             }
-            // Transmitimos el paquete de datos limpio al archivo principal de InfinityFree
             window.parent.postMessage(resultado, "*");
         })
         .catch(err => {
