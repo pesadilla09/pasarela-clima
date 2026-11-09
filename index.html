@@ -4,107 +4,50 @@
     <meta charset="UTF-8">
     <title>Pasarela de Clima Real — RunningLab</title>
     <style>
-        body { font-family: monospace; background: #0f172a; color: #38bdf8; margin: 0; padding: 40px; font-size: 14px; line-height: 1.6; }
-        .card { background: #1e293b; padding: 25px; border-radius: 12px; border: 1px solid #334155; max-width: 600px; margin: 0 auto; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
-        h3 { margin-top: 0; color: #f8fafc; border-bottom: 1px solid #334155; padding-bottom: 12px; font-size: 16px; }
-        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 20px; }
-        .box { background: #0f172a; padding: 12px; border-radius: 8px; border: 1px solid #334155; }
-        .box span { display: block; color: #94a3b8; font-size: 11px; text-transform: uppercase; font-weight: bold; }
-        .box strong { display: block; color: #f8fafc; font-size: 18px; margin-top: 4px; }
-        .success { color: #34d399 !important; }
-        .error-log { background: #7f1d1d; color: #fca5a5; padding: 15px; border-radius: 6px; border: 1px solid #b91c1c; margin-top: 20px; font-size: 12px; display: none; }
+        body { font-family: monospace; background: #0f172a; color: #38bdf8; margin: 0; padding: 20px; font-size: 14px; }
+        .grid-clima { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 15px; background: #0f172a; padding: 15px; border-radius: 10px; border: 1px solid #334155; max-width: 700px; margin: 0 auto; }
+        .forma-box { background: #1e293b; padding: 12px; border-radius: 8px; border: 1px solid #334155; }
+        .forma-box span { display: block; color: #94a3b8; font-size: 0.85em; text-transform: uppercase; font-weight: bold; }
+        .forma-box strong { display: block; color: #f8fafc; font-size: 1.25em; margin-top: 4px; font-weight: 600; }
+        .success-text { color: #34d399 !important; }
     </style>
 </head>
 <body>
 
-<div class="card">
-    <h3>📡 Consulta de Satélite en Tiempo Real (Prueba de Inferencia)</h3>
-    <p style="color: #cbd5e1; margin: 0 0 15px 0; font-size: 13px;">
-        Este panel extrae los datos históricos de internet simulando por defecto tu entrenamiento del sábado 7 de noviembre de 2026 a las 17:00 hs en Águilas (Murcia).
-    </p>
-
-    <div class="grid">
-        <div class="box"><span>📍 Localidad</span><strong id="api-localidad" class="success">Buscando...</strong></div>
-        <div class="box"><span>🌡️ Temperatura</span><strong id="api-temp">-- °C</strong></div>
-        <div class="box"><span>💧 Humedad</span><strong id="api-hum">-- %</strong></div>
-        <div class="box"><span>💨 Viento</span><strong id="api-wind">-- km/h</strong></div>
-        <div class="box" style="grid-column: span 2;"><span>🧘 Estrés Térmico Fisiológico WBGT</span><strong id="api-wbgt" style="color: #fbbf24;">-- °C</strong></div>
-    </div>
-
-    <div id="error-box" class="error-log"></div>
+<div class="grid-clima">
+    <div class="forma-box"><span>📍 Ubicación Satélite</span><strong id="localidad" class="success-text">Buscando...</strong></div>
+    <div class="forma-box"><span>Real Satélite Weather</span><strong id="temp">Conectando...</strong></div>
+    <div class="forma-box"><span>Real Hum / Wind</span><strong id="wind">Conectando...</strong></div>
+    <div class="forma-box"><span>Estrés Fisiológico WBGT</span><strong id="wbgt">-- °C</strong></div>
 </div>
 
 <script>
 (function() {
-    // Captura los parámetros dinámicos de la URL si se los mandas; si no, auto-inyecta los datos de tu carrera por defecto
     const params = new URLSearchParams(window.location.search);
-    const lat = parseFloat(params.get('lat')) || 37.4030;
-    const lon = parseFloat(params.get('lon')) || -1.5830;
+    const lat = params.get('lat') || "37.4030";
+    const lon = params.get('lon') || "-1.5830";
     const fecha = params.get('fecha') || "2026-11-07";
     const hora = params.get('hora') || "17:09";
 
-    // Formateamos las marcas cronológicas según exige el servidor meteorológico internacional
-    const horaBloque = hora.substring(0, 2) + ":00";
-    const targetTimestamp = fecha + "T" + horaBloque;
-
-    // 1. ENDPOINTS OFICIALES DE SERVIDORES DE DATOS ABIERTOS (api. y geocoding-api. obligatorios)
-    const urlClima = "https://open-meteo.com" + lat.toFixed(4) + "&longitude=" + lon.toFixed(4) + "&start_date=" + fecha + "&end_date=" + fecha + "&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m&timezone=Europe%2FMadrid";
-    const urlGeo = "https://open-meteo.com" + lat.toFixed(4) + "&longitude=" + lon.toFixed(4) + "&language=es&format=json";
-
-    // Iniciamos la extracción encadenada nativa libre de datos harcodeados
-    fetch(urlGeo)
-        .then(res => {
-            if (!res.ok) throw new Error("El servidor de mapas geocodificados no responde.");
-            return res.json();
-        })
-        .then(geoData => {
-            let lugar = "Zona Rural";
-            let region = "España";
-            
-            if (geoData && geoData.results && geoData.results.length > 0) {
-                lugar = geoData.results[0].name || "Zona Rural";
-                region = geoData.results[0].admin1 || "España";
-            }
-            document.getElementById('api-localidad').innerText = lugar + " (" + region + ")";
-            
-            return fetch(urlClima);
-        })
-        .then(res => {
-            if (!res.ok) throw new Error("El satélite histórico central rechazó la conexión o la fecha aún no está consolidada.");
-            return res.json();
-        })
-        .then(data => {
-            if (data && data.hourly && data.hourly.time) {
-                const idx = data.hourly.time.indexOf(targetTimestamp);
+    // Llamamos a nuestra propia función backend de Vercel libre de bloqueos de red
+    fetch(`/api/clima?lat=${lat}&lon=${lon}&fecha=${fecha}&hora=${hora}`)
+        .then(res => res.json())
+        .then(clima => {
+            if (clima) {
+                document.getElementById('localidad').innerText = clima.municipio + (clima.provincia ? " (" + clima.provincia + ")" : "");
+                document.getElementById('temp').innerText = clima.temp + " °C";
+                document.getElementById('wind').innerText = clima.hum + "% — " + clima.wind + " km/h";
+                document.getElementById('wbgt').innerText = clima.wbgt + " °C";
                 
-                if (idx !== -1) {
-                    const temp = data.hourly.temperature_2m[idx];
-                    const hum = data.hourly.relative_humidity_2m[idx];
-                    const wind = Math.round(data.hourly.wind_speed_10m[idx]);
-                    const wbgt = Math.round((temp * 0.7) + (temp * (hum / 100) * 0.3));
-
-                    // Inyectamos los números dinámicos extraídos de internet en la pantalla del usuario
-                    document.getElementById('api-temp').innerText = temp + " °C";
-                    document.getElementById('api-hum').innerText = hum + " %";
-                    document.getElementById('api-wind').innerText = wind + " km/h";
-                    document.getElementById('api-wbgt').innerText = wbgt + " °C";
-                } else {
-                    throw new Error("El satélite no encuentra el bloque horario solicitado (" + targetTimestamp + ") en su archivo.");
-                }
-            } else {
-                throw new Error("La estructura del paquete meteorológico devuelto por internet es ilegible.");
+                // Transmitimos de forma asíncrona a InfinityFree
+                window.parent.postMessage(clima, "*");
             }
         })
-        .catch(err => {
-            // Si hay un fallo de red real, despliega el recuadro rojo con el informe técnico exacto
-            document.getElementById('error-box').innerText = "🔴 INFORME DE ERROR DEL SATÉLITE: " + err.message;
-            document.getElementById('error-box').style.display = "block";
-            document.getElementById('api-localidad').innerText = "Señal interrumpida";
-            document.getElementById('api-localidad').className = "error-text";
+        .catch(() => {
+            document.getElementById('temp').innerText = "Reconectando satélite...";
         });
 })();
 </script>
-
 </body>
 </html>
 
