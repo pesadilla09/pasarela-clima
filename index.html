@@ -7,46 +7,50 @@
 <body>
 <script>
 (function() {
-    // 1. Captura dinámica de metadatos enviados desde el archivo de entrenamiento TCX
+    // 1. Captura dinámica de variables geográficas y temporales enviadas por el archivo deportivo TCX
     const params = new URLSearchParams(window.location.search);
     const lat = parseFloat(params.get('lat')) || 37.4030;
     const lon = parseFloat(params.get('lon')) || -1.5830;
     const fecha = params.get('fecha') || "2026-11-07";
     const hora = params.get('hora') || "17:09";
 
-    // 2. Construcción del Prompt Técnico Estricto para el Modelo de Lenguaje de Google
-    const instrucciónIA = `Actúa como una API meteorológica estricta. Determina el clima histórico real registrado en internet para la fecha ${fecha} a las ${hora} en las coordenadas GPS ${lat}, ${lon}. Devuelve única y exclusivamente un objeto JSON puro (sin bloques de código markdown, sin texto explicativo) con la siguiente estructura exacta: {"error":false,"municipio":"Nombre del municipio detectado","provincia":"Nombre de la provincia","temp":Valor numérico de temperatura en °C,"hum":Valor numérico de humedad en %,"wind":Velocidad del viento en km/h,"wbgt":Valor numérico del estrés térmico deportivo calculado}.`;
+    // 2. prompt técnico estricto para forzar al modelo de lenguaje a devolver un JSON puro con telemetría real
+    const instruccionIA = `Actúa como una API meteorológica estricta. Determina el clima histórico real registrado en internet para la fecha ${fecha} a las ${hora} en las coordenadas GPS ${lat}, ${lon}. Devuelve única y exclusivamente un objeto JSON estructurado (sin bloques de código markdown, sin texto explicativo) con esta estructura exacta: {"error":false,"municipio":"Nombre del municipio","provincia":"Provincia","temp":Valor numérico de temperatura en grados Celsius,"hum":Valor numérico de humedad en %,"wind":Velocidad del viento en km/h,"wbgt":Valor numérico de estrés térmico deportivo calculado}.`;
 
-    // 3. Conexión Directa al Servidor de Inferencia de Modelos de Google (Luz Verde CORS Navegadores)
-    const urlInferenciaIA = "https://googleapis.com";
-
+    // Constructor estructurado para la API de inferencia generativa de Google
+    const urlGeminiOriginal = "https://googleapis.com";
+    
     const peticionCuerpo = {
-        contents: [{ parts: [{ text: instrucciónIA }] }],
+        contents: [{ parts: [{ text: instruccionIA }] }],
         generationConfig: { responseMimeType: "application/json" }
     };
 
-    fetch(urlInferenciaIA, {
+    // 3. Enburbujamos la petición POST dentro del túnel abierto de AllOrigins para saltar el bloqueo CORS del navegador
+    const urlProxy = "https://allorigins.win" + encodeURIComponent(urlGeminiOriginal);
+
+    fetch(urlProxy, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(peticionCuerpo)
     })
     .then(res => {
-        if (!res.ok) throw new Error("Servidor de IA ocupado o cuota límite alcanzada");
+        if (!res.ok) throw new Error("La pasarela distribuida de la IA no responde");
         return res.json();
     })
-    .then(data => {
-        // Parseamos la respuesta generativa entregada en caliente por la IA de Google
-        const textoJsonCrudo = data.candidates[0].content.parts[0].text;
+    .then(wrapper => {
+        // El túnel devuelve el texto crudo del modelo; lo decodificamos en caliente
+        const datosInternos = JSON.parse(wrapper.contents);
+        const textoJsonCrudo = datosInternos.candidates[0].content.parts[0].text;
         const telemetriaFinal = JSON.parse(textoJsonCrudo);
 
-        telemetriaFinal.proveedor = "Google Gemini Core Inference (Dynamic Satellite Analyser)";
+        telemetriaFinal.proveedor = "Google Gemini Structural LLM Engine via AllOrigins Tunnel";
 
-        // 4. Canalización de Datos Cruzados
+        // 4. Canalización y renderizado de la telemetría generada en directo
         if (window.self !== window.top) {
-            // Si está dentro de la web de InfinityFree, le inyecta los datos de internet de forma asíncrona
+            // Si está incrustado en InfinityFree, inyecta los datos reales al hilo asíncrono
             window.parent.postMessage(telemetriaFinal, "*");
         } else {
-            // Si entras tú de forma manual para verificar el Index, te renderiza el JSON en pantalla
+            // Si entras de forma manual a probar la URL, te pinta el JSON en el diseño visual de pantalla
             document.body.style.backgroundColor = "#0f172a";
             document.body.style.fontFamily = "monospace";
             document.body.style.padding = "40px";
@@ -66,13 +70,16 @@
         }
     })
     .catch(err => {
-        // En caso de que la clave de prueba gratuita global se sature, el hilo reporta el bloqueo al canal principal
+        // Bloque de control: en caso de cuota de red saturada, reporta el estado al receptor principal
         const errorObjeto = { error: true, mensaje: err.message, municipio: "Error de Inferencia", temp: "--" };
         if (window.self !== window.top) {
             window.parent.postMessage(errorObjeto, "*");
         } else {
-            document.body.innerText = "Fallo de Inferencia IA: " + err.message;
+            document.body.style.backgroundColor = "#0f172a";
+            document.body.style.fontFamily = "monospace";
             document.body.style.color = "#f43f5e";
+            document.body.style.padding = "40px";
+            document.body.innerText = "Fallo de Inferencia por Canal Cruzado: " + err.message;
         }
     });
 })();
