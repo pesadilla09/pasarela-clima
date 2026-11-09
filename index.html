@@ -11,44 +11,43 @@
     const hora = params.get('hora');
 
     if (!lat || !lon || !fecha || !hora) {
-        window.parent.postMessage({ error: true, mensaje: "Faltan parámetros en el TCX" }, "*");
+        window.parent.postMessage({ error: true, mensaje: "Faltan parámetros" }, "*");
         return;
     }
 
-    const horaCorte = hora.substring(0, 2) + ":00"; 
-    let resultado = { error: false, municipio: "Zona Rural", provincia: "España", temp: "--", hum: "--", wind: "--", wbgt: "--" };
+    // Formateamos la hora exacta de corte según el estándar de Open-Meteo (ej: 2026-11-07T17:00)
+    const targetTimestamp = fecha + "T" + hora.substring(0, 2) + ":00";
 
-    // Constructor de URL nativo para evitar corrupciones de texto o bloqueos de parseo
-    const urlClima = new URL("https://open-meteo.com");
-    urlClima.searchParams.append("latitude", lat.toFixed(4));
-    urlClima.searchParams.append("longitude", lon.toFixed(4));
-    urlClima.searchParams.append("start_date", fecha);
-    urlClima.searchParams.append("end_date", fecha);
-    urlClima.searchParams.append("hourly", "temperature_2m,relative_humidity_2m,wind_speed_10m");
-    urlClima.searchParams.append("timezone", "Europe/Madrid");
+    let resultado = { 
+        error: false, 
+        municipio: "Zona Rural", 
+        provincia: "España", 
+        temp: "--", 
+        hum: "--", 
+        wind: "--", 
+        wbgt: "--" 
+    };
 
-    const urlGeo = new URL("https://open-meteo.com");
-    urlGeo.searchParams.append("latitude", lat.toFixed(4));
-    urlGeo.searchParams.append("longitude", lon.toFixed(4));
-    urlGeo.searchParams.append("language", "es");
-    urlGeo.searchParams.append("format", "json");
+    const urlClima = "https://open-meteo.com" + lat.toFixed(4) + "&longitude=" + lon.toFixed(4) + "&start_date=" + fecha + "&end_date=" + fecha + "&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m&timezone=Europe%2FMadrid";
+    const urlGeo = "https://open-meteo.com" + lat.toFixed(4) + "&longitude=" + lon.toFixed(4) + "&language=es&format=json";
 
-    fetch(urlGeo.toString())
+    // 1. Extraemos el Municipio de internet en tiempo real
+    fetch(urlGeo)
         .then(res => res.json())
         .then(geoData => {
             if (geoData && geoData.results && geoData.results.length > 0) {
-                resultado.municipio = geoData.results[0].name || "Zona Rural";
-                resultado.provincia = geoData.results[0].admin1 || "España";
+                resultado.municipio = geoData.results.name || "Zona Rural";
+                resultado.provincia = geoData.results.admin1 || "España";
             }
-            return fetch(urlClima.toString());
+            // 2. Extraemos las variables climatológicas del satélite de internet
+            return fetch(urlClima);
         })
         .then(res => {
-            if (!res.ok) throw new Error("Satélite fuera de línea");
+            if (!res.ok) throw new Error("Error de satélite");
             return res.json();
         })
         .then(data => {
             if (data && data.hourly && data.hourly.time) {
-                const targetTimestamp = fecha + "T" + horaCorte;
                 const idx = data.hourly.time.indexOf(targetTimestamp);
                 
                 if (idx !== -1) {
@@ -58,6 +57,7 @@
                     resultado.wbgt = Math.round((resultado.temp * 0.7) + (resultado.temp * (resultado.hum / 100) * 0.3));
                 }
             }
+            // Enviamos las variables con los mismos nombres exactos que busca tu archivo procesar_entreno.php
             window.parent.postMessage(resultado, "*");
         })
         .catch(err => {
@@ -67,6 +67,7 @@
 </script>
 </body>
 </html>
+
 
 
 
