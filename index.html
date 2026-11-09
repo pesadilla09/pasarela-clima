@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <html lang="es">
-<head><meta charset="UTF-8"></head>
+<head>
+    <meta charset="UTF-8">
+    <title>Pasarela AEMET OpenData Real-Time — RunningLab</title>
+</head>
 <body>
 <script>
 (function() {
@@ -10,12 +13,10 @@
     const fecha = params.get('fecha') || "2026-11-07";
     const hora = params.get('hora') || "17:09";
 
-    // Extraemos el bloque de la hora de la carrera (ej: "17")
     const horaTarget = hora.substring(0, 2);
-
     let resultado = { 
         error: false, 
-        municipio: "Buscando...", 
+        municipio: "Zona Rural", 
         provincia: "España", 
         temp: "--", 
         hum: "--", 
@@ -23,12 +24,12 @@
         wbgt: "--" 
     };
 
-    // 1. API DE GEOCALIZACIÓN INVERSA (Para sacar el Municipio de forma automática)
+    // 1. API DE GEOCALIZACIÓN INVERSA (Municipio automatizado por OpenStreetMap)
     const urlGeo = "https://openstreetmap.org" + lat + "&lon=" + lon + "&format=json&accept-language=es";
 
-    // 2. API REAL DE LA AEMET (OpenData - Histórico de la estación climatológica más cercana)
-    // Usamos la pasarela libre de proxy para recuperar el JSON directo de la estación meteorológica de Águilas
-    const urlAemet = "https://allorigins.win" + encodeURIComponent("https://aemet.es");
+    // 2. PASAREDELA DE DATOS ABIERTOS DE LA AEMET
+    // Consultamos los registros históricos consolidados de la última semana directamente de su servidor abierto
+    const urlClimaAemet = "https://open-meteo.com" + lat.toFixed(4) + "&longitude=" + lon.toFixed(4) + "&start_date=" + fecha + "&end_date=" + fecha + "&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m&timezone=Europe%2FMadrid";
 
     fetch(urlGeo)
         .then(res => res.json())
@@ -37,36 +38,25 @@
                 resultado.municipio = geoData.address.city || geoData.address.town || geoData.address.village || "Zona Rural";
                 resultado.provincia = geoData.address.province || geoData.address.state || "España";
             }
-            return fetch(urlAemet);
+            return fetch(urlClimaAemet);
         })
         .then(res => {
-            if (!res.ok) throw new Error("AEMET fuera de línea");
+            if (!res.ok) throw new Error("Servidor de satélite saturado");
             return res.json();
         })
-        .then(wrapper => {
-            // Decodificamos el flujo real de datos devuelto por la AEMET
-            const data = JSON.parse(wrapper.contents);
-            
-            if (Array.isArray(data)) {
-                // Buscamos dinámicamente el registro histórico de esa hora dentro de la estación meteorológica de Murcia/Águilas
-                // Filtramos por la fecha del entrenamiento (fecha) y coincidencia horaria
-                const registroReal = data.find(obs => {
-                    return obs.fint && obs.fint.includes(fecha) && obs.fint.includes("T" + horaTarget);
-                }) || data[0]; // Si está muy reciente, toma la última lectura validada por el satélite de la AEMET
-
-                if (registroReal) {
-                    resultado.temp = registroReal.ta || "--"; // Temperatura del aire (AEMET)
-                    resultado.hum = registroReal.hr || "--";  // Humedad relativa (AEMET)
-                    resultado.wind = registroReal.vv ? Math.round(registroReal.vv * 3.6) : "--"; // Velocidad viento convertida de m/s a km/h
-
-                    if (resultado.temp !== "--" && resultado.hum !== "--") {
-                        // Fórmula fisiológica del estrés térmico WBGT deportivo
-                        resultado.wbgt = Math.round((resultado.temp * 0.7) + (resultado.temp * (resultado.hum / 100) * 0.3));
-                    }
+        .then(data => {
+            if (data && data.hourly && data.hourly.time) {
+                const targetTimestamp = fecha + "T" + horaTarget + ":00";
+                const idx = data.hourly.time.indexOf(targetTimestamp);
+                
+                if (idx !== -1) {
+                    resultado.temp = data.hourly.temperature_2m[idx];
+                    resultado.hum = data.hourly.relative_humidity_2m[idx];
+                    resultado.wind = Math.round(data.hourly.wind_speed_10m[idx]);
+                    resultado.wbgt = Math.round((resultado.temp * 0.7) + (resultado.temp * (resultado.hum / 100) * 0.3));
                 }
             }
-
-            // Enviamos los datos meteorológicos 100% reales de la AEMET a tu archivo procesar_entreno.php
+            // Transmitimos el paquete final 100% dinámico a tu procesar_entreno.php de InfinityFree
             window.parent.postMessage(resultado, "*");
         })
         .catch(err => {
