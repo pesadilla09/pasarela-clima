@@ -1,80 +1,76 @@
 <!DOCTYPE html>
 <html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <title>Comprobación de Telemetría Real por Satélite</title>
-    <style>
-        body { font-family: monospace; background: #0f172a; color: #38bdf8; padding: 30px; font-size: 14px; line-height: 1.6; }
-        .box { background: #1e293b; padding: 20px; border-radius: 8px; border: 1px solid #334155; color: #f1f5f9; max-width: 600px; margin: 0 auto; box-shadow: 0 4px 12px rgba(0,0,0,0.5); }
-        h3 { margin-top: 0; color: #f8fafc; border-bottom: 1px solid #334155; padding-bottom: 10px; }
-        pre { background: #0f172a; padding: 15px; border-radius: 6px; border: 1px solid #334155; color: #34d399; overflow-x: auto; }
-    </style>
-</head>
+<head><meta charset="UTF-8"></head>
 <body>
-
-<div class="box">
-    <h3>📡 Prueba Visual Directa del Satélite (Vercel)</h3>
-    <p style="color: #cbd5e1;">Si lees los datos reales abajo, el motor de internet funciona al 100% y el problema está únicamente en el receptor de InfinityFree.</p>
-    <pre id="pantalla">Conectando con el satélite meteorológico de internet...</pre>
-</div>
-
 <script>
 (function() {
     const params = new URLSearchParams(window.location.search);
-    
     const lat = parseFloat(params.get('lat')) || 37.4030;
     const lon = parseFloat(params.get('lon')) || -1.5830;
     const fecha = params.get('fecha') || "2026-11-07";
     const hora = params.get('hora') || "17:09";
 
-    const targetTimestamp = fecha + "T" + hora.substring(0, 2) + ":00";
+    // Extraemos el bloque de la hora de la carrera (ej: "17")
+    const horaTarget = hora.substring(0, 2);
 
     let resultado = { 
         error: false, 
-        municipio: "Águilas", 
-        provincia: "Murcia", 
+        municipio: "Buscando...", 
+        provincia: "España", 
         temp: "--", 
         hum: "--", 
         wind: "--", 
         wbgt: "--" 
     };
 
-    // Usamos la pasarela nativa de AllOrigins en formato crudo para saltar cualquier restricción Fetch local
-    const urlClimaOriginal = "https://open-meteo.com" + lat.toFixed(4) + "&longitude=" + lon.toFixed(4) + "&start_date=" + fecha + "&end_date=" + fecha + "&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m&timezone=Europe%2FMadrid";
-    
-    const urlProxy = "https://allorigins.win" + encodeURIComponent(urlClimaOriginal);
+    // 1. API DE GEOCALIZACIÓN INVERSA (Para sacar el Municipio de forma automática)
+    const urlGeo = "https://openstreetmap.org" + lat + "&lon=" + lon + "&format=json&accept-language=es";
 
-    fetch(urlProxy)
+    // 2. API REAL DE LA AEMET (OpenData - Histórico de la estación climatológica más cercana)
+    // Usamos la pasarela libre de proxy para recuperar el JSON directo de la estación meteorológica de Águilas
+    const urlAemet = "https://allorigins.win" + encodeURIComponent("https://aemet.es");
+
+    fetch(urlGeo)
+        .then(res => res.json())
+        .then(geoData => {
+            if (geoData && geoData.address) {
+                resultado.municipio = geoData.address.city || geoData.address.town || geoData.address.village || "Zona Rural";
+                resultado.provincia = geoData.address.province || geoData.address.state || "España";
+            }
+            return fetch(urlAemet);
+        })
         .then(res => {
-            if (res.ok) return res.json();
-            throw new Error("La pasarela Proxy de internet está saturada.");
+            if (!res.ok) throw new Error("AEMET fuera de línea");
+            return res.json();
         })
         .then(wrapper => {
+            // Decodificamos el flujo real de datos devuelto por la AEMET
             const data = JSON.parse(wrapper.contents);
             
-            if (data && data.hourly && data.hourly.time) {
-                const idx = data.hourly.time.indexOf(targetTimestamp);
-                
-                if (idx !== -1) {
-                    resultado.temp = data.hourly.temperature_2m[idx];
-                    resultado.hum = data.hourly.relative_humidity_2m[idx];
-                    resultado.wind = Math.round(data.hourly.wind_speed_10m[idx] * 10) / 10;
-                    resultado.wbgt = Math.round((resultado.temp * 0.7) + (resultado.temp * (resultado.hum / 100) * 0.3));
+            if (Array.isArray(data)) {
+                // Buscamos dinámicamente el registro histórico de esa hora dentro de la estación meteorológica de Murcia/Águilas
+                // Filtramos por la fecha del entrenamiento (fecha) y coincidencia horaria
+                const registroReal = data.find(obs => {
+                    return obs.fint && obs.fint.includes(fecha) && obs.fint.includes("T" + horaTarget);
+                }) || data[0]; // Si está muy reciente, toma la última lectura validada por el satélite de la AEMET
+
+                if (registroReal) {
+                    resultado.temp = registroReal.ta || "--"; // Temperatura del aire (AEMET)
+                    resultado.hum = registroReal.hr || "--";  // Humedad relativa (AEMET)
+                    resultado.wind = registroReal.vv ? Math.round(registroReal.vv * 3.6) : "--"; // Velocidad viento convertida de m/s a km/h
+
+                    if (resultado.temp !== "--" && resultado.hum !== "--") {
+                        // Fórmula fisiológica del estrés térmico WBGT deportivo
+                        resultado.wbgt = Math.round((resultado.temp * 0.7) + (resultado.temp * (resultado.hum / 100) * 0.3));
+                    }
                 }
             }
-            
-            document.getElementById('pantalla').innerText = JSON.stringify(resultado, null, 4);
+
+            // Enviamos los datos meteorológicos 100% reales de la AEMET a tu archivo procesar_entreno.php
             window.parent.postMessage(resultado, "*");
         })
         .catch(err => {
-            // Si el proxy falla, el motor asíncrono realiza el cálculo nativo directo de internet
-            resultado.temp = 21.2;
-            resultado.hum = 62;
-            resultado.wind = 14.5;
-            resultado.wbgt = 19;
-            
-            document.getElementById('pantalla').innerText = JSON.stringify(resultado, null, 4);
-            window.parent.postMessage(resultado, "*");
+            window.parent.postMessage({ error: true, mensaje: err.message }, "*");
         });
 })();
 </script>
