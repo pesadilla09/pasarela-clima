@@ -1,82 +1,68 @@
 <!DOCTYPE html>
 <html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #38bdf8; margin: 0; padding: 0; font-size: 14px; }
-        .grid-clima { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 15px; background: #0f172a; padding: 15px; border-radius: 10px; border: 1px solid #334155; }
-        .forma-box { background: #1e293b; padding: 12px; border-radius: 8px; border: 1px solid #334155; }
-        .forma-box span { display: block; color: #94a3b8; font-size: 0.85em; text-transform: uppercase; font-weight: bold; }
-        .forma-box strong { display: block; color: #f8fafc; font-size: 1.2em; margin-top: 4px; font-weight: 600; }
-        .success-text { color: #34d399 !important; }
-    </style>
-</head>
+<head><meta charset="UTF-8"></head>
 <body>
-
-<div class="grid-clima">
-    <div class="forma-box"><span>📍 Ubicación Satélite</span><strong id="localidad" class="success-text">Buscando...</strong></div>
-    <div class="forma-box"><span>Real Satélite Weather</span><strong id="temp">Conectando...</strong></div>
-    <div class="forma-box"><span>Real Hum / Wind</span><strong id="wind">Conectando...</strong></div>
-    <div class="forma-box"><span>Estrés Fisiológico WBGT</span><strong id="wbgt">-- °C</strong></div>
-</div>
-
 <script>
 (function() {
     const params = new URLSearchParams(window.location.search);
-    const lat = parseFloat(params.get('lat')) || 37.4030;
-    const lon = parseFloat(params.get('lon')) || -1.5830;
-    const fecha = params.get('fecha') || "2026-11-07";
-    const hora = params.get('hora') || "17:09";
+    const lat = parseFloat(params.get('lat'));
+    const lon = parseFloat(params.get('lon'));
+    const fecha = params.get('fecha');
+    const hora = params.get('hora');
+
+    if (!lat || !lon || !fecha || !hora) {
+        window.parent.postMessage({ error: true, mensaje: "Faltan parámetros en el TCX" }, "*");
+        return;
+    }
+
     const horaCorte = hora.substring(0, 2) + ":00:00"; 
+    let resultado = { error: false, municipio: "", provincia: "", temp: "", hum: "", wind: "", wbgt: "" };
 
-    // 1. RECONOCIMIENTO GEOGRÁFICO DE MUNICIPIO AUTOMÁTICO
-    const urlGeo = `https://open-meteo.com{lat.toFixed(4)}&longitude=${lon.toFixed(4)}&language=es&format=json`;
+    // 1. Consulta Geográfica del Municipio por Coordenadas reales de internet
+    const urlGeo = `https://open-meteo.com{lat.toFixed(4)}&longitude=${lon.toFixed(4)}&current=&hourly=&local_meteo_id=open-meteo-geocoding`;
+    
+    // Usamos el endpoint de archivo histórico oficial para recuperar los datos reales de internet de la fecha del TCX
+    const urlClima = `https://open-meteo.com{lat.toFixed(4)}&longitude=${lon.toFixed(4)}&start_date=${fecha}&end_date=${fecha}&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m&timezone=Europe%2FMadrid`;
 
-    fetch(urlGeo)
+    // Intentamos recuperar la geolocalización inversa real
+    fetch(`https://openstreetmap.org{lat}&lon=${lon}&zoom=10&addressdetails=1`)
         .then(res => res.json())
-        .then(geoData => {
-            if (geoData && geoData.results && geoData.results.length > 0) {
-                const lugar = geoData.results[0];
-                const municipio = lugar.name || "Zona Rural";
-                const provincia = lugar.admin1 || "";
-                document.getElementById('localidad').innerText = municipio + " (" + provincia + ")";
-            } else {
-                document.getElementById('localidad').innerText = "Coordenadas GPS";
+        .then(geo => {
+            if (geo && geo.address) {
+                resultado.municipio = geo.address.city || geo.address.town || geo.address.village || geo.address.county || "Zona Rural";
+                resultado.provincia = geo.address.province || geo.address.state || "";
             }
+            return fetch(urlClima);
         })
-        .catch(() => { document.getElementById('localidad').innerText = "Águilas (Murcia)"; });
-
-    // 2. EXTRACCIÓN CLIMÁTICA HISTÓRICA EN TIEMPO REAL
-    const urlClima = "https://visualcrossing.com" + lat.toFixed(4) + "," + lon.toFixed(4) + "/" + fecha + "/" + fecha + "?unitGroup=metric&include=hours&key=FREE_ACCESS_KEY&contentType=json";
-
-    fetch(urlClima)
-        .then(res => { if (res.ok) return res.json(); throw new Error(); })
+        .then(res => {
+            if (!res.ok) throw new Error("Error en respuesta de satélite");
+            return res.json();
+        })
         .then(data => {
-            if (data && data.days && data.days[0] && data.days[0].hours) {
-                const hours = data.days[0].hours;
-                const hourRow = hours.find(h => h.datetime === horaCorte) || hours[0];
-                
-                if (hourRow) {
-                    const t = hourRow.temp;
-                    const h = hourRow.humidity;
-                    const w = Math.round(hourRow.windspeed);
-                    const calculatedWbgt = Math.round((t * 0.7) + (t * (h / 100) * 0.3));
-
-                    document.getElementById('temp').innerText = t + " °C";
-                    document.getElementById('wind').innerText = h + "% — " + w + " km/h";
-                    document.getElementById('wbgt').innerText = calculatedWbgt + " °C";
+            if (data && data.hourly && data.hourly.time) {
+                const idx = data.hourly.time.indexOf(fecha + "T" + hora.substring(0, 2) + ":00");
+                if (idx !== -1) {
+                    resultado.temp = data.hourly.temperature_2m[idx];
+                    resultado.hum = data.hourly.relative_humidity_2m[idx];
+                    resultado.wind = Math.round(data.hourly.wind_speed_10m[idx]);
+                    resultado.wbgt = Math.round((resultado.temp * 0.7) + (resultado.temp * (resultado.hum / 100) * 0.3));
+                    
+                    window.parent.postMessage(resultado, "*");
+                } else {
+                    throw new Error("Bloque horario no consolidado");
                 }
+            } else {
+                throw new Error("Estructura inválida");
             }
         })
-        .catch(() => {
-            document.getElementById('temp').innerText = "21.2 °C";
-            document.getElementById('wind').innerText = "62% — 14.5 km/h";
-            document.getElementById('wbgt').innerText = "19 °C";
+        .catch(err => {
+            window.parent.postMessage({ error: true, mensaje: err.message }, "*");
         });
 })();
 </script>
 </body>
 </html>
+
 
 
 
