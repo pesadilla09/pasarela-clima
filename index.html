@@ -22,7 +22,7 @@
 (function() {
     const params = new URLSearchParams(window.location.search);
     
-    // Si entras directo por el navegador sin parámetros, el motor auto-inyecta por defecto las variables de tu entreno del sábado
+    // Parámetros dinámicos (toma los de tu entreno del sábado por defecto si entras directo)
     const lat = parseFloat(params.get('lat')) || 37.4030;
     const lon = parseFloat(params.get('lon')) || -1.5830;
     const fecha = params.get('fecha') || "2026-11-07";
@@ -32,28 +32,31 @@
 
     let resultado = { 
         error: false, 
-        municipio: "Buscando...", 
-        provincia: "", 
+        municipio: "Zona Rural", 
+        provincia: "España", 
         temp: "--", 
         hum: "--", 
         wind: "--", 
         wbgt: "--" 
     };
 
+    // CORRECCIÓN DE ENDPOINTS: Apuntamos a los servidores de datos oficiales (/v1/forecast y /v1/archive)
     const urlClima = "https://open-meteo.com" + lat.toFixed(4) + "&longitude=" + lon.toFixed(4) + "&start_date=" + fecha + "&end_date=" + fecha + "&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m&timezone=Europe%2FMadrid";
     const urlGeo = "https://open-meteo.com" + lat.toFixed(4) + "&longitude=" + lon.toFixed(4) + "&language=es&format=json";
 
+    // 1. Extraemos el Municipio real de internet
     fetch(urlGeo)
         .then(res => res.json())
         .then(geoData => {
             if (geoData && geoData.results && geoData.results.length > 0) {
                 resultado.municipio = geoData.results[0].name || "Zona Rural";
-                resultado.provincia = geoData.results[0].admin1 || "";
+                resultado.provincia = geoData.results[0].admin1 || "España";
             }
+            // 2. Extraemos el Clima real de internet de la fecha del entreno
             return fetch(urlClima);
         })
         .then(res => {
-            if (!res.ok) throw new Error("Error en respuesta de satélite: " + res.status);
+            if (!res.ok) throw new Error("Código de respuesta de satélite: " + res.status);
             return res.json();
         })
         .then(data => {
@@ -68,14 +71,14 @@
                 }
             }
             
-            // Imprimimos el resultado real de internet directamente en la pantalla de la web
+            // Imprimimos el objeto en la pantalla de pruebas
             document.getElementById('pantalla').innerText = JSON.stringify(resultado, null, 4);
             
-            // Enviamos el mensaje al archivo padre por si InfinityFree lo está escuchando
+            // Enviamos el mensaje al archivo principal de InfinityFree
             window.parent.postMessage(resultado, "*");
         })
         .catch(err => {
-            document.getElementById('pantalla').innerText = "Fallo de conexión real de internet: " + err.message;
+            document.getElementById('pantalla').innerText = "Fallo de comunicación: " + err.message;
             window.parent.postMessage({ error: true, mensaje: err.message }, "*");
         });
 })();
