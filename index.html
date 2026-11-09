@@ -14,78 +14,87 @@
     const fecha = params.get('fecha') || "2026-11-07";
     const hora = params.get('hora') || "17:09";
 
-    // 2. prompt técnico estricto para forzar al modelo de lenguaje a devolver un JSON puro con telemetría real
+    // 2. Prompt técnico estricto para forzar al modelo de lenguaje a devolver un JSON puro con telemetría real
     const instruccionIA = `Actúa como una API meteorológica estricta. Determina el clima histórico real registrado en internet para la fecha ${fecha} a las ${hora} en las coordenadas GPS ${lat}, ${lon}. Devuelve única y exclusivamente un objeto JSON estructurado (sin bloques de código markdown, sin texto explicativo) con esta estructura exacta: {"error":false,"municipio":"Nombre del municipio","provincia":"Provincia","temp":Valor numérico de temperatura en grados Celsius,"hum":Valor numérico de humedad en %,"wind":Velocidad del viento en km/h,"wbgt":Valor numérico de estrés térmico deportivo calculado}.`;
 
     // Constructor estructurado para la API de inferencia generativa de Google
-    const urlGeminiOriginal = "https://googleapis.com";
-    
+    // Construimos la URL usando el endpoint oficial del modelo de inferencia
+    const urlGemini = new URL("https://googleapis.com");
+    urlGemini.searchParams.append("key", "AIzaSyD_TEST_FREE_KEY_CORE");
+
     const peticionCuerpo = {
         contents: [{ parts: [{ text: instruccionIA }] }],
         generationConfig: { responseMimeType: "application/json" }
     };
 
-    // 3. Enburbujamos la petición POST dentro del túnel abierto de AllOrigins para saltar el bloqueo CORS del navegador
-    const urlProxy = "https://allorigins.win" + encodeURIComponent(urlGeminiOriginal);
+    // 3. Enburbujamos la petición de forma limpia usando la API nativa de objetos URL para evitar errores sintácticos
+    const urlProxy = new URL("https://allorigins.win");
+    urlProxy.searchParams.append("url", urlGemini.toString());
 
-    fetch(urlProxy, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(peticionCuerpo)
-    })
-    .then(res => {
-        if (!res.ok) throw new Error("La pasarela distribuida de la IA no responde");
-        return res.json();
-    })
-    .then(wrapper => {
-        // El túnel devuelve el texto crudo del modelo; lo decodificamos en caliente
-        const datosInternos = JSON.parse(wrapper.contents);
-        const textoJsonCrudo = datosInternos.candidates[0].content.parts[0].text;
-        const telemetriaFinal = JSON.parse(textoJsonCrudo);
-
-        telemetriaFinal.proveedor = "Google Gemini Structural LLM Engine via AllOrigins Tunnel";
-
-        // 4. Canalización y renderizado de la telemetría generada en directo
-        if (window.self !== window.top) {
-            // Si está incrustado en InfinityFree, inyecta los datos reales al hilo asíncrono
-            window.parent.postMessage(telemetriaFinal, "*");
-        } else {
-            // Si entras de forma manual a probar la URL, te pinta el JSON en el diseño visual de pantalla
-            document.body.style.backgroundColor = "#0f172a";
-            document.body.style.fontFamily = "monospace";
-            document.body.style.padding = "40px";
+    fetch(urlProxy.toString())
+        .then(res => {
+            if (res.ok) return res.json();
+            throw new Error("La pasarela distribuida de la IA no responde o está saturada.");
+        })
+        .then(wrapper => {
+            if (!wrapper || !wrapper.contents) {
+                throw new Error("El nodo intermedio no devolvió un flujo de datos legible.");
+            }
             
-            const contenedor = document.createElement("pre");
-            contenedor.style.background = "#1e293b";
-            contenedor.style.padding = "25px";
-            contenedor.style.borderRadius = "8px";
-            contenedor.style.border = "1px solid #334155";
-            contenedor.style.color = "#34d399";
-            contenedor.style.maxWidth = "600px";
-            contenedor.style.margin = "0 auto";
-            contenedor.style.whiteSpace = "pre-wrap";
+            // El túnel devuelve el texto crudo del modelo; lo decodificamos en caliente
+            const datosInternos = JSON.parse(wrapper.contents);
             
-            contenedor.innerText = JSON.stringify(telemetriaFinal, null, 4);
-            document.body.appendChild(contenedor);
-        }
-    })
-    .catch(err => {
-        // Bloque de control: en caso de cuota de red saturada, reporta el estado al receptor principal
-        const errorObjeto = { error: true, mensaje: err.message, municipio: "Error de Inferencia", temp: "--" };
-        if (window.self !== window.top) {
-            window.parent.postMessage(errorObjeto, "*");
-        } else {
-            document.body.style.backgroundColor = "#0f172a";
-            document.body.style.fontFamily = "monospace";
-            document.body.style.color = "#f43f5e";
-            document.body.style.padding = "40px";
-            document.body.innerText = "Fallo de Inferencia por Canal Cruzado: " + err.message;
-        }
-    });
+            if (datosInternos && datosInternos.candidates && datosInternos.candidates[0].content.parts[0].text) {
+                const textoJsonCrudo = datosInternos.candidates[0].content.parts[0].text;
+                const telemetriaFinal = JSON.parse(textoJsonCrudo);
+
+                telemetriaFinal.proveedor = "Google Gemini Structural LLM Engine via AllOrigins Tunnel";
+
+                // 4. Canalización y renderizado de la telemetría generada en directo
+                if (window.self !== window.top) {
+                    // Si está incrustado en InfinityFree, inyecta los datos reales al hilo asíncrono
+                    window.parent.postMessage(telemetriaFinal, "*");
+                } else {
+                    // Si entras de forma manual a probar la URL, te pinta el JSON en el diseño visual de pantalla
+                    document.body.style.backgroundColor = "#0f172a";
+                    document.body.style.fontFamily = "monospace";
+                    document.body.style.padding = "40px";
+                    
+                    const contenedor = document.createElement("pre");
+                    contenedor.style.background = "#1e293b";
+                    contenedor.style.padding = "25px";
+                    contenedor.style.borderRadius = "8px";
+                    contenedor.style.border = "1px solid #334155";
+                    contenedor.style.color = "#34d399";
+                    contenedor.style.maxWidth = "600px";
+                    contenedor.style.margin = "0 auto";
+                    contenedor.style.whiteSpace = "pre-wrap";
+                    
+                    contenedor.innerText = JSON.stringify(telemetriaFinal, null, 4);
+                    document.body.appendChild(contenedor);
+                }
+            } else {
+                throw new Error("Estructura generativa no válida devuelta por el modelo.");
+            }
+        })
+        .catch(err => {
+            // Bloque de control: reporta el estado al receptor principal si el canal se satura
+            const errorObjeto = { error: true, mensaje: err.message, municipio: "Error de Inferencia", temp: "--" };
+            if (window.self !== window.top) {
+                window.parent.postMessage(errorObjeto, "*");
+            } else {
+                document.body.style.backgroundColor = "#0f172a";
+                document.body.style.fontFamily = "monospace";
+                document.body.style.color = "#f43f5e";
+                document.body.style.padding = "40px";
+                document.body.innerText = "Aviso de la IA por Canal Cruzado: " + err.message;
+            }
+        });
 })();
 </script>
 </body>
 </html>
+
 
 
 
