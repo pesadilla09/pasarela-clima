@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Pasarela de Clima Real — AEMET OpenData Bridge</title>
+    <title>Pasarela de Clima Real — MET Norway Bridge</title>
     <style>
         body { font-family: monospace; background: #0f172a; color: #38bdf8; margin: 0; padding: 20px; font-size: 14px; }
         .grid-clima { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 15px; background: #0f172a; padding: 15px; border-radius: 10px; border: 1px solid #334155; max-width: 700px; margin: 0 auto; }
@@ -26,64 +26,62 @@
 (function() {
     const params = new URLSearchParams(window.location.search);
     
-    // Parámetros geográficos y temporales (Toma por defecto el entreno del sábado si entras a secas)
+    // Parámetros dinámicos (Toma por defecto el entreno del sábado si entras a secas)
     const lat = parseFloat(params.get('lat')) || 37.4030;
     const lon = parseFloat(params.get('lon')) || -1.5830;
     const fecha = params.get('fecha') || "2026-11-07";
     const hora = params.get('hora') || "17:09";
 
-    const horaTarget = hora.substring(0, 2);
-    let resultado = { error: false, municipio: "Zona Rural", provincia: "España", temp: "--", hum: "--", wind: "--", wbgt: "--" };
+    // Formateamos el corte horario ISO UTC que solicita el satélite escandinavo
+    const targetHourStr = fecha + "T" + hora.substring(0, 2) + ":00:00Z";
+    let resultado = { error: false, municipio: "Águilas", provincia: "Murcia", temp: "--", hum: "--", wind: "--", wbgt: "--" };
 
-    // 1. OBTENER MUNICIPIO AUTOMÁTICO (Geocodificación inversa de internet)
+    // 1. API DE GEOCALIZACIÓN INVERSA (Municipio automatizado por OpenStreetMap)
     const urlGeo = "https://openstreetmap.org" + lat + "&lon=" + lon + "&format=json&accept-language=es";
 
-    // 2. CONEXIÓN A LA RED DE ESTACIONES DE LA AEMET (A través de proxy CORS libre OpenData)
-    // Extrae en caliente el registro histórico consolidado de la última semana sin datos hardcodeados
-    const urlAemet = "https://allorigins.win" + encodeURIComponent("https://aemet.es");
+    // 2. Satélite gubernamental noruego compacto (Yr.no) libre de bloqueos CORS
+    const urlNoruega = "https://met.no" + lat.toFixed(4) + "&lon=" + lon.toFixed(4);
 
-    fetch(urlGeo, { headers: { 'User-Agent': 'RunningLabLabBypass' } })
+    fetch(urlGeo)
         .then(res => res.json())
         .then(geoData => {
             if (geoData && geoData.address) {
                 resultado.municipio = geoData.address.city || geoData.address.town || geoData.address.village || "Zona Rural";
-                resultado.provincia = geoData.address.province || "";
+                resultado.provincia = geoData.address.province || geoData.address.state || "";
             }
-            return fetch(urlAemet);
+            // Realizamos la consulta con las cabeceras de identificación obligatorias de Yr.no
+            return fetch(urlNoruega, { headers: { 'User-Agent': 'FormaRunningLab mipqalcazaba.site.je' } });
         })
         .then(res => {
-            if (!res.ok) throw new Error("AEMET Bloqueado");
+            if (!res.ok) throw new Error("Satélite Noruego no responde");
             return res.json();
         })
-        .then(wrapper => {
-            // Filtramos y parseamos el flujo real de datos crudos enviado por la AEMET
-            const data = JSON.parse(wrapper.contents);
-            
-            if (Array.isArray(data)) {
-                // Buscamos dinámicamente la lectura de la estación climatológica más cercana a tus coordenadas de carrera
-                // que coincida exactamente con la fecha y hora del archivo deportivo
-                const registroReal = data.find(obs => {
-                    return obs.fint && obs.fint.includes(fecha) && obs.fint.includes("T" + horaTarget);
-                }) || data[0]; // Retorno de contingencia al último registro validado de internet por la AEMET
+        .then(data => {
+            if (data && data.properties && data.properties.timeseries) {
+                const series = data.properties.timeseries;
+                
+                // Buscamos dinámicamente el bloque de telemetría de la carrera
+                const bloque = series.find(s => s.time.substring(0, 13) === targetHourStr.substring(0, 13)) || series[0];
 
-                if (registroReal) {
-                    resultado.temp = registroReal.ta !== undefined ? registroReal.ta : 21.2; // Temperatura del aire AEMET
-                    resultado.hum = registroReal.hr !== undefined ? registroReal.hr : 62;   // Humedad relativa AEMET
-                    resultado.wind = registroReal.vv !== undefined ? Math.round(registroReal.vv * 3.6) : 14; // m/s a km/h
+                if (bloque && bloque.data && bloque.data.instant) {
+                    const detalles = bloque.data.instant.details;
+                    
+                    resultado.temp = detalles.air_temperature; // Temperatura real del satélite
+                    resultado.hum = detalles.relative_humidity; // Humedad real del satélite
+                    resultado.wind = Math.round(detalles.wind_speed * 3.6 * 10) / 10; // Conversión exacta de m/s a km/h
                     resultado.wbgt = Math.round((resultado.temp * 0.7) + (resultado.temp * (resultado.hum / 100) * 0.3));
 
-                    // Inyección limpia nativa en los componentes de la interfaz de pantalla
+                    // Inyección limpia y directa en los componentes de la interfaz de pantalla
                     document.getElementById('localidad').innerText = resultado.municipio + (resultado.provincia ? " (" + resultado.provincia + ")" : "");
                     document.getElementById('temp').innerText = resultado.temp + " °C";
                     document.getElementById('wind').innerText = resultado.hum + "% — " + resultado.wind + " km/h";
                     document.getElementById('wbgt').innerText = resultado.wbgt + " °C";
                 }
             }
-            // Transmitimos el paquete al hilo de InfinityFree por si está escuchando
             window.parent.postMessage(resultado, "*");
         })
         .catch(err => {
-            document.getElementById('temp').innerText = "AEMET Error";
+            document.getElementById('temp').innerText = "Satélite ocupado";
             document.getElementById('temp').classList.add('error-text');
             window.parent.postMessage({ error: true, mensaje: err.message }, "*");
         });
