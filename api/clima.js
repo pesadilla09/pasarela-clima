@@ -1,5 +1,16 @@
+
+/*
+ * RUNNINGLAB - API METEOROLÓGICA HISTÓRICA
+ * Ruta: /api/clima
+ * Parámetros:
+ *   lat: latitud GPS
+ *   lon: longitud GPS
+ *   fecha: YYYY-MM-DD
+ *   hora: HH:mm
+ */
+
 export default async function handler(req, res) {
-    // 1. Configuración CORS para InfinityFree
+    // Permitir peticiones desde RunningLab (InfinityFree)
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -15,145 +26,198 @@ export default async function handler(req, res) {
         });
     }
 
-    // 2. Recoger parámetros
-    const { lat, lon, fecha, hora } = req.query;
-
-    if (!lat || !lon || !fecha || !hora) {
-        return res.status(400).json({
-            error: true,
-            mensaje: 'Faltan parámetros: lat, lon, fecha u hora'
-        });
-    }
-
-    const latNum = Number(lat);
-    const lonNum = Number(lon);
-
-    if (
-        !Number.isFinite(latNum) ||
-        !Number.isFinite(lonNum) ||
-        latNum < -90 || latNum > 90 ||
-        lonNum < -180 || lonNum > 180 ||
-        !/^\d{4}-\d{2}-\d{2}$/.test(fecha) ||
-        !/^\d{2}:\d{2}$/.test(hora)
-    ) {
-        return res.status(400).json({
-            error: true,
-            mensaje: 'Los parámetros geográficos o temporales no son válidos'
-        });
-    }
-
-    const [year, month, day] = fecha.split('-').map(Number);
-    const [hour, minute] = hora.split(':').map(Number);
-    const dateCheck = new Date(Date.UTC(year, month - 1, day));
-
-    if (
-        dateCheck.getUTCFullYear() !== year ||
-        dateCheck.getUTCMonth() !== month - 1 ||
-        dateCheck.getUTCDate() !== day ||
-        hour > 23 || minute > 59
-    ) {
-        return res.status(400).json({
-            error: true,
-            mensaje: 'La fecha u hora no existen'
-        });
-    }
-
-    // Open-Meteo ofrece datos horarios, no registros cada minuto.
-    // Para las 17:09 consultamos el registro de las 17:00.
-    const targetTimestamp =
-        `${fecha}T${String(hour).padStart(2, '0')}:00`;
-
-    const resultado = {
-        error: false,
-        municipio: 'Desconocido',
-        provincia: 'España',
-        temp: null,
-        hum: null,
-        wind: null,
-        wbgt: null,
-        hora_consultada: targetTimestamp,
-        hora_solicitada: hora,
-        fuente: 'Open-Meteo Historical Weather API'
-    };
-
     try {
-        // 3. Geolocalización inversa mediante OpenStreetMap
-        const urlGeo =
-            `https://nominatim.openstreetmap.org/reverse?format=jsonv2` +
-            `&lat=${latNum}&lon=${lonNum}&accept-language=es`;
+        const lat = Number(req.query.lat);
+        const lon = Number(req.query.lon);
+        const fecha = String(req.query.fecha || '');
+        const hora = String(req.query.hora || '12:00');
 
-        const geoRes = await fetch(urlGeo, {
-            headers: {
-                'User-Agent': 'RunningLab-Clima/1.0'
+        // Validación de coordenadas
+        if (
+            !Number.isFinite(lat) ||
+            !Number.isFinite(lon) ||
+            lat < -90 || lat > 90 ||
+            lon < -180 || lon > 180
+        ) {
+            return res.status(400).json({
+                error: true,
+                mensaje: 'Coordenadas GPS no válidas'
+            });
+        }
+
+        // Validación de fecha y hora
+        if (
+            !/^\d{4}-\d{2}-\d{2}$/.test(fecha) ||
+            !/^\d{2}:\d{2}$/.test(hora)
+        ) {
+            return res.status(400).json({
+                error: true,
+                mensaje: 'Fecha u hora no válidas'
+            });
+        }
+
+        const fechaObj = new Date(fecha + 'T12:00:00Z');
+
+        if (
+            Number.isNaN(fechaObj.getTime()) ||
+            fechaObj.toISOString().slice(0, 10) !== fecha
+        ) {
+            return res.status(400).json({
+                error: true,
+                mensaje: 'La fecha indicada no existe'
+            });
+        }
+
+        const [hh, mm] = hora.split(':').map(Number);
+
+        if (hh > 23 || mm > 59) {
+            return res.status(400).json({
+                error: true,
+                mensaje: 'La hora indicada no es válida'
+            });
+        }
+
+        // Consulta a Open-Meteo Historical Weather API
+        const base = 'https://archive-api.open-meteo.com/v1/archive';
+
+        const params = new URLSearchParams({
+            latitude: String(lat),
+            longitude: String(lon),
+            start_date: fecha,
+            end_date: fecha,
+            hourly: 'temperature_2m,relative_humidity_2m,wind_speed_10m',
+            timezone: 'Europe/Madrid',
+            wind_speed_unit: 'kmh'
+        });
+
+        const meteoResponse = await fetch(
+            base + '?' + params.toString()
+        );
+
+        if (!meteoResponse.ok) {
+            throw new Error(
+                'Open-Meteo ha respondido con HTTP ' +
+                meteoResponse.status
+            );
+        }
+
+        const meteo = await meteoResponse.json();
+
+        if (
+            !meteo.hourly ||
+            !Array.isArray(meteo.hourly.time) ||
+            meteo.hourly.time.length === 0
+        ) {
+            throw new Error(
+                'No hay datos meteorológicos históricos para esa fecha y ubicación'
+            );
+        }
+
+        // Buscar la hora horaria más cercana a la del entrenamiento
+        const objetivo = hh * 60 + mm;
+
+        let indice = 0;
+        let menorDiferencia = Infinity;
+
+        meteo.hourly.time.forEach((valor, i) => {
+            const partes = valor
+                .slice(11, 16)
+                .split(':')
+                .map(Number);
+
+            const minutos = partes[0] * 60 + partes[1];
+            const diferencia = Math.abs(minutos - objetivo);
+
+            if (diferencia < menorDiferencia) {
+                menorDiferencia = diferencia;
+                indice = i;
             }
         });
 
-        if (geoRes.ok) {
-            const geoData = await geoRes.json();
-            const address = geoData.address || {};
+        const temp = meteo.hourly.temperature_2m[indice];
+        const hum = meteo.hourly.relative_humidity_2m[indice];
+        const wind = meteo.hourly.wind_speed_10m[indice];
 
-            resultado.municipio =
-                address.town ||
-                address.village ||
-                address.city ||
-                address.municipality ||
-                address.hamlet ||
-                'Zona rural';
+        // Geocodificación inversa: municipio y provincia
+        let municipio = 'Ubicación GPS';
+        let provincia = '';
 
-            resultado.provincia =
-                address.province ||
-                address.state ||
-                'España';
+        try {
+            const geoUrl =
+                'https://nominatim.openstreetmap.org/reverse?' +
+                new URLSearchParams({
+                    format: 'jsonv2',
+                    lat: String(lat),
+                    lon: String(lon),
+                    zoom: '10',
+                    addressdetails: '1'
+                }).toString();
+
+            const geoResponse = await fetch(geoUrl, {
+                headers: {
+                    'User-Agent': 'RunningLab/1.0'
+                }
+            });
+
+            if (geoResponse.ok) {
+                const geo = await geoResponse.json();
+                const address = geo.address || {};
+
+                municipio =
+                    address.city ||
+                    address.town ||
+                    address.village ||
+                    address.municipality ||
+                    address.hamlet ||
+                    address.county ||
+                    municipio;
+
+                provincia =
+                    address.state ||
+                    address.province ||
+                    address.region ||
+                    '';
+            }
+        } catch (geoError) {
+            // Si falla la geocodificación,
+            // conservamos los datos meteorológicos.
         }
 
-        // 4. Consulta meteorológica histórica
-        const urlClima =
-            `https://archive-api.open-meteo.com/v1/archive` +
-            `?latitude=${latNum}` +
-            `&longitude=${lonNum}` +
-            `&start_date=${fecha}` +
-            `&end_date=${fecha}` +
-            `&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m` +
-            `&timezone=Europe%2FMadrid`;
+        // Respuesta JSON para RunningLab
+        return res.status(200).json({
+            error: false,
 
-        const climaRes = await fetch(urlClima);
+            municipio: municipio,
+            provincia: provincia,
 
-        if (!climaRes.ok) {
-            throw new Error(
-                `Error de Open-Meteo: HTTP ${climaRes.status}`
-            );
-        }
+            temp: temp !== null && temp !== undefined
+                ? Number(Number(temp).toFixed(1))
+                : null,
 
-        const data = await climaRes.json();
+            hum: hum !== null && hum !== undefined
+                ? Number(hum)
+                : null,
 
-        if (!data.hourly || !data.hourly.time) {
-            throw new Error('No se recibieron datos horarios');
-        }
+            wind: wind !== null && wind !== undefined
+                ? Number(Number(wind).toFixed(1))
+                : null,
 
-        const idx = data.hourly.time.indexOf(targetTimestamp);
+            // No se calcula WBGT real en esta versión
+            wbgt: null,
 
-        if (idx === -1) {
-            throw new Error(
-                `No existe el registro horario ${targetTimestamp}`
-            );
-        }
+            hora_consultada: meteo.hourly.time[indice],
+            hora_solicitada: hora,
 
-        // 5. Recuperar datos reales
-        resultado.temp = data.hourly.temperature_2m[idx];
-        resultado.hum = data.hourly.relative_humidity_2m[idx];
-        resultado.wind = data.hourly.wind_speed_10m[idx];
+            fuente: 'Open-Meteo Historical Weather API'
+        });
 
-        // 6. WBGT
-        // No se calcula un WBGT real con estas tres variables.
-        // Se deja null para evitar presentar una estimación como medición.
-        resultado.wbgt = null;
+    } catch (error) {
+        console.error('Error API clima:', error);
 
-        return res.status(200).json(resultado);
-
-    } catch (err) {
         return res.status(500).json({
             error: true,
-            mensaje: `Error de conexión: ${err.message}`
+            mensaje: error.message ||
+                'Error consultando el clima histórico'
         });
     }
 }
