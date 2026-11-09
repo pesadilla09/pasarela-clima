@@ -54,7 +54,6 @@
 
     // 2. MOTOR METEOROLÓGICO REAL DE INTERNET
     const urlClima = "https://visualcrossing.com" + lat.toFixed(4) + "," + lon.toFixed(4) + "/" + fecha + "/" + fecha + "?unitGroup=metric&include=hours&key=FREE_ACCESS_KEY&contentType=json";
-
     fetch(urlClima)
         .then(res => {
             if (res.ok) return res.json();
