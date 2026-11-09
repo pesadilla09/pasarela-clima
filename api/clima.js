@@ -2,15 +2,22 @@
 /*
  * RUNNINGLAB - API METEOROLÓGICA HISTÓRICA
  * Ruta: /api/clima
- * Parámetros:
- *   lat: latitud GPS
- *   lon: longitud GPS
- *   fecha: YYYY-MM-DD
- *   hora: HH:mm
+ *
+ * Devuelve:
+ * - Temperatura
+ * - Humedad relativa
+ * - Viento
+ * - Radiación solar
+ * - WBGT estimado
+ * - Municipio y provincia
+ *
+ * El WBGT se estima mediante una aproximación basada
+ * en temperatura, humedad, viento y radiación solar.
  */
 
 export default async function handler(req, res) {
-    // Permitir peticiones desde RunningLab (InfinityFree)
+
+    // Permitir peticiones desde RunningLab
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -27,6 +34,7 @@ export default async function handler(req, res) {
     }
 
     try {
+
         const lat = Number(req.query.lat);
         const lon = Number(req.query.lon);
         const fecha = String(req.query.fecha || '');
@@ -77,17 +85,27 @@ export default async function handler(req, res) {
             });
         }
 
-        // Consulta a Open-Meteo Historical Weather API
-        const base = 'https://archive-api.open-meteo.com/v1/archive';
+        // ------------------------------------------------
+        // CONSULTA A OPEN-METEO
+        // ------------------------------------------------
+
+        const base =
+            'https://archive-api.open-meteo.com/v1/archive';
 
         const params = new URLSearchParams({
             latitude: String(lat),
             longitude: String(lon),
             start_date: fecha,
             end_date: fecha,
-            hourly: 'temperature_2m,relative_humidity_2m,wind_speed_10m',
+
+            hourly:
+                'temperature_2m,' +
+                'relative_humidity_2m,' +
+                'wind_speed_10m,' +
+                'shortwave_radiation',
+
             timezone: 'Europe/Madrid',
-            wind_speed_unit: 'kmh'
+            wind_speed_unit: 'ms'
         });
 
         const meteoResponse = await fetch(
@@ -109,24 +127,31 @@ export default async function handler(req, res) {
             meteo.hourly.time.length === 0
         ) {
             throw new Error(
-                'No hay datos meteorológicos históricos para esa fecha y ubicación'
+                'No hay datos meteorológicos para esa fecha'
             );
         }
 
-        // Buscar la hora horaria más cercana a la del entrenamiento
+        // ------------------------------------------------
+        // BUSCAR LA HORA MÁS CERCANA AL ENTRENAMIENTO
+        // ------------------------------------------------
+
         const objetivo = hh * 60 + mm;
 
         let indice = 0;
         let menorDiferencia = Infinity;
 
         meteo.hourly.time.forEach((valor, i) => {
+
             const partes = valor
                 .slice(11, 16)
                 .split(':')
                 .map(Number);
 
-            const minutos = partes[0] * 60 + partes[1];
-            const diferencia = Math.abs(minutos - objetivo);
+            const minutos =
+                partes[0] * 60 + partes[1];
+
+            const diferencia =
+                Math.abs(minutos - objetivo);
 
             if (diferencia < menorDiferencia) {
                 menorDiferencia = diferencia;
@@ -134,15 +159,119 @@ export default async function handler(req, res) {
             }
         });
 
-        const temp = meteo.hourly.temperature_2m[indice];
-        const hum = meteo.hourly.relative_humidity_2m[indice];
-        const wind = meteo.hourly.wind_speed_10m[indice];
+        const temp =
+            meteo.hourly.temperature_2m[indice];
 
-        // Geocodificación inversa: municipio y provincia
+        const hum =
+            meteo.hourly.relative_humidity_2m[indice];
+
+        const wind =
+            meteo.hourly.wind_speed_10m[indice];
+
+        const radiation =
+            meteo.hourly.shortwave_radiation[indice];
+
+        // ------------------------------------------------
+        // CÁLCULO WBGT ESTIMADO
+        // ------------------------------------------------
+
+        /*
+         * IMPORTANTE:
+         * Esta fórmula es una aproximación empírica.
+         * NO es una implementación validada del método
+         * físico WBGT de Liljegren et al. (2008).
+         *
+         * Para un WBGT fiable en condiciones exteriores
+         * se necesita estimar temperatura de globo negro
+         * y temperatura de bulbo húmedo natural mediante
+         * un modelo físico.
+         */
+
+        function calcularWbgtEstimado(
+            temperatura,
+            humedad,
+            viento,
+            radiacion
+        ) {
+
+            if (
+                temperatura === null ||
+                humedad === null ||
+                viento === null ||
+                radiacion === null ||
+                !Number.isFinite(Number(temperatura)) ||
+                !Number.isFinite(Number(humedad)) ||
+                !Number.isFinite(Number(viento)) ||
+                !Number.isFinite(Number(radiacion))
+            ) {
+                return null;
+            }
+
+            const T = Number(temperatura);
+            const RH = Number(humedad);
+            const V = Number(viento);
+            const R = Number(radiacion);
+
+            if (
+                RH < 0 || RH > 100 ||
+                V < 0 ||
+                R < 0
+            ) {
+                return null;
+            }
+
+            // Presión de vapor real aproximada (hPa)
+            const es =
+                6.105 * Math.exp(
+                    (17.27 * T) / (237.7 + T)
+                );
+
+            const ea = (RH / 100) * es;
+
+            // Temperatura de bulbo húmedo aproximada
+            const Tw =
+                T * Math.atan(
+                    0.151977 * Math.sqrt(RH + 8.313659)
+                ) +
+                Math.atan(T + RH) -
+                Math.atan(RH - 1.676331) +
+                0.00391838 *
+                Math.pow(RH, 1.5) *
+                Math.atan(0.023101 * RH) -
+                4.686035;
+
+            // Incremento solar simplificado
+            const incrementoSolar =
+                0.017 * Math.sqrt(R) /
+                (1 + 0.15 * V);
+
+            const Tg = T + incrementoSolar;
+
+            // WBGT exterior aproximado
+            const wbgt =
+                0.7 * Tw +
+                0.2 * Tg +
+                0.1 * T;
+
+            return Number(wbgt.toFixed(1));
+        }
+
+        const wbgt = calcularWbgtEstimado(
+            temp,
+            hum,
+            wind,
+            radiation
+        );
+
+        // ------------------------------------------------
+        // GEOCODIFICACIÓN: MUNICIPIO Y PROVINCIA
+        // ------------------------------------------------
+
         let municipio = 'Ubicación GPS';
         let provincia = '';
 
         try {
+
             const geoUrl =
                 'https://nominatim.openstreetmap.org/reverse?' +
                 new URLSearchParams({
@@ -160,6 +289,7 @@ export default async function handler(req, res) {
             });
 
             if (geoResponse.ok) {
+
                 const geo = await geoResponse.json();
                 const address = geo.address || {};
 
@@ -178,13 +308,18 @@ export default async function handler(req, res) {
                     address.region ||
                     '';
             }
+
         } catch (geoError) {
             // Si falla la geocodificación,
-            // conservamos los datos meteorológicos.
+            // mantenemos los datos meteorológicos.
         }
 
-        // Respuesta JSON para RunningLab
+        // ------------------------------------------------
+        // RESPUESTA PARA RUNNINGLAB
+        // ------------------------------------------------
+
         return res.status(200).json({
+
             error: false,
 
             municipio: municipio,
@@ -202,16 +337,27 @@ export default async function handler(req, res) {
                 ? Number(Number(wind).toFixed(1))
                 : null,
 
-            // No se calcula WBGT real en esta versión
-            wbgt: null,
+            radiation: radiation !== null &&
+                radiation !== undefined
+                ? Number(radiation)
+                : null,
 
-            hora_consultada: meteo.hourly.time[indice],
+            wbgt: wbgt,
+
+            wbgt_tipo: 'Estimación aproximada exterior',
+
+            hora_consultada:
+                meteo.hourly.time[indice],
+
             hora_solicitada: hora,
 
-            fuente: 'Open-Meteo Historical Weather API'
+            fuente:
+                'Open-Meteo Historical Weather API'
+
         });
 
     } catch (error) {
+
         console.error('Error API clima:', error);
 
         return res.status(500).json({
@@ -221,4 +367,3 @@ export default async function handler(req, res) {
         });
     }
 }
-
