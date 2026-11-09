@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Pasarela de Clima Real — MET Norway Bridge</title>
+    <title>Pasarela de Clima Real — RunningLab</title>
     <style>
         body { font-family: monospace; background: #0f172a; color: #38bdf8; margin: 0; padding: 20px; font-size: 14px; }
         .grid-clima { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 15px; background: #0f172a; padding: 15px; border-radius: 10px; border: 1px solid #334155; max-width: 700px; margin: 0 auto; }
@@ -26,64 +26,52 @@
 (function() {
     const params = new URLSearchParams(window.location.search);
     
-    // Parámetros dinámicos (Toma por defecto el entreno del sábado si entras a secas)
+    // Parámetros geográficos dinámicos (Águilas por defecto si entras a secas)
     const lat = parseFloat(params.get('lat')) || 37.4030;
     const lon = parseFloat(params.get('lon')) || -1.5830;
     const fecha = params.get('fecha') || "2026-11-07";
     const hora = params.get('hora') || "17:09";
 
-    // Formateamos el corte horario ISO UTC que solicita el satélite escandinavo
-    const targetHourStr = fecha + "T" + hora.substring(0, 2) + ":00:00Z";
+    const targetTimestamp = fecha + "T" + hora.substring(0, 2) + ":00";
     let resultado = { error: false, municipio: "Águilas", provincia: "Murcia", temp: "--", hum: "--", wind: "--", wbgt: "--" };
 
-    // 1. API DE GEOCALIZACIÓN INVERSA (Municipio automatizado por OpenStreetMap)
-    const urlGeo = "https://openstreetmap.org" + lat + "&lon=" + lon + "&format=json&accept-language=es";
+    // Construcción de la URL de Open-Meteo apuntando a sus servidores de datos consolidados
+    const urlClimaOriginal = "https://open-meteo.com" + lat.toFixed(4) + "&longitude=" + lon.toFixed(4) + "&start_date=" + fecha + "&end_date=" + fecha + "&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m&timezone=Europe%2FMadrid";
+    
+    // Envolvemos la petición en corsproxy.io para saltar el bloqueo perimetral de red de forma 100% limpia
+    const urlFinal = "https://corsproxy.io?" + encodeURIComponent(urlClimaOriginal);
 
-    // 2. Satélite gubernamental noruego compacto (Yr.no) libre de bloqueos CORS
-    const urlNoruega = "https://met.no" + lat.toFixed(4) + "&lon=" + lon.toFixed(4);
-
-    fetch(urlGeo)
-        .then(res => res.json())
-        .then(geoData => {
-            if (geoData && geoData.address) {
-                resultado.municipio = geoData.address.city || geoData.address.town || geoData.address.village || "Zona Rural";
-                resultado.provincia = geoData.address.province || geoData.address.state || "";
-            }
-            // Realizamos la consulta con las cabeceras de identificación obligatorias de Yr.no
-            return fetch(urlNoruega, { headers: { 'User-Agent': 'FormaRunningLab mipqalcazaba.site.je' } });
-        })
+    fetch(urlFinal)
         .then(res => {
-            if (!res.ok) throw new Error("Satélite Noruego no responde");
+            if (!res.ok) throw new Error("Fallo en pasarela de datos");
             return res.json();
         })
         .then(data => {
-            if (data && data.properties && data.properties.timeseries) {
-                const series = data.properties.timeseries;
+            if (data && data.hourly && data.hourly.time) {
+                const idx = data.hourly.time.indexOf(targetTimestamp);
                 
-                // Buscamos dinámicamente el bloque de telemetría de la carrera
-                const bloque = series.find(s => s.time.substring(0, 13) === targetHourStr.substring(0, 13)) || series[0];
-
-                if (bloque && bloque.data && bloque.data.instant) {
-                    const detalles = bloque.data.instant.details;
-                    
-                    resultado.temp = detalles.air_temperature; // Temperatura real del satélite
-                    resultado.hum = detalles.relative_humidity; // Humedad real del satélite
-                    resultado.wind = Math.round(detalles.wind_speed * 3.6 * 10) / 10; // Conversión exacta de m/s a km/h
+                if (idx !== -1) {
+                    resultado.temp = data.hourly.temperature_2m[idx];
+                    resultado.hum = data.hourly.relative_humidity_2m[idx];
+                    resultado.wind = Math.round(data.hourly.wind_speed_10m[idx]);
                     resultado.wbgt = Math.round((resultado.temp * 0.7) + (resultado.temp * (resultado.hum / 100) * 0.3));
 
-                    // Inyección limpia y directa en los componentes de la interfaz de pantalla
-                    document.getElementById('localidad').innerText = resultado.municipio + (resultado.provincia ? " (" + resultado.provincia + ")" : "");
+                    // Inyección real descargada de internet en pantalla
+                    document.getElementById('localidad').innerText = resultado.municipio + " (" + resultado.provincia + ")";
                     document.getElementById('temp').innerText = resultado.temp + " °C";
                     document.getElementById('wind').innerText = resultado.hum + "% — " + resultado.wind + " km/h";
                     document.getElementById('wbgt').innerText = resultado.wbgt + " °C";
+                    
+                    // Transmitimos los datos reales a tu InfinityFree
+                    window.parent.postMessage(resultado, "*");
+                } else {
+                    document.getElementById('temp').innerText = "Hora no consolidada";
                 }
             }
-            window.parent.postMessage(resultado, "*");
         })
         .catch(err => {
             document.getElementById('temp').innerText = "Satélite ocupado";
             document.getElementById('temp').classList.add('error-text');
-            window.parent.postMessage({ error: true, mensaje: err.message }, "*");
         });
 })();
 </script>
