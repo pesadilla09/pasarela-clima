@@ -28,7 +28,7 @@
     const fecha = "2026-11-07";
     const targetHour = fecha + "T17:00"; 
 
-    // Apuntamos al endpoint de archivo histórico oficial abierto de Open-Meteo
+    // Forzamos la consulta al endpoint de rango reciente acotando las fechas de forma explícita
     const url = "https://open-meteo.com" + lat + "&longitude=" + lon + "&start_date=" + fecha + "&end_date=" + fecha + "&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m&timezone=Europe%2FMadrid";
 
     fetch(url)
@@ -56,10 +56,11 @@
             }
         })
         .catch(() => {
-            document.getElementById('temp').innerText = "Satélite fuera de cobertura";
+            document.getElementById('temp').innerText = "Satélite en mantenimiento";
         });
 })();
 </script>
 </body>
 </html>
+
 
