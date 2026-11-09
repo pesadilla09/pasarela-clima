@@ -20,22 +20,24 @@
 
 <script>
 (function() {
-    // Captura los parámetros GPS que le enviará tu web de InfinityFree
     const params = new URLSearchParams(window.location.search);
     const lat = parseFloat(params.get('lat')) || 37.4030;
     const lon = parseFloat(params.get('lon')) || -1.5830;
     
-    // Sábado 7 de noviembre de 2026 (Fecha de tu entreno)
+    // Configuración cronológica exacta de la carrera
     const fecha = "2026-11-07";
     const targetHour = fecha + "T17:00"; 
 
-    // Consulta en directo a la API de historial reciente de Open-Meteo libre de CORS
-    const url = "https://open-meteo.com" + lat + "&longitude=" + lon + "&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m&timezone=Europe%2FMadrid&past_days=7";
+    // Apuntamos al endpoint de archivo histórico oficial abierto de Open-Meteo
+    const url = "https://open-meteo.com" + lat + "&longitude=" + lon + "&start_date=" + fecha + "&end_date=" + fecha + "&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m&timezone=Europe%2FMadrid";
 
     fetch(url)
-        .then(res => res.json())
+        .then(res => {
+            if (res.ok) return res.json();
+            throw new Error();
+        })
         .then(data => {
-            if (data && data.hourly) {
+            if (data && data.hourly && data.hourly.time) {
                 const idx = data.hourly.time.indexOf(targetHour);
                 if (idx !== -1) {
                     const t = data.hourly.temperature_2m[idx];
@@ -47,14 +49,17 @@
                     document.getElementById('wind').innerText = h + "% — " + w + " km/h";
                     document.getElementById('wbgt').innerText = calculatedWbgt + " °C";
                 } else {
-                    document.getElementById('temp').innerText = "Hora no hallada";
+                    document.getElementById('temp').innerText = "Bloque H. no hallado";
                 }
+            } else {
+                document.getElementById('temp').innerText = "Estructura no válida";
             }
         })
         .catch(() => {
-            document.getElementById('temp').innerText = "Satélite ocupado";
+            document.getElementById('temp').innerText = "Satélite fuera de cobertura";
         });
 })();
 </script>
 </body>
 </html>
+
