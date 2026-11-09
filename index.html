@@ -10,6 +10,7 @@
         .forma-box span { display: block; color: #94a3b8; font-size: 0.85em; text-transform: uppercase; font-weight: bold; }
         .forma-box strong { display: block; color: #f8fafc; font-size: 1.25em; margin-top: 4px; font-weight: 600; }
         .success-text { color: #34d399 !important; }
+        .error-text { color: #f43f5e !important; }
     </style>
 </head>
 <body>
@@ -29,28 +30,36 @@
     const fecha = params.get('fecha') || "2026-11-07";
     const hora = params.get('hora') || "17:09";
 
-    // Llamamos a nuestra propia función backend de Vercel libre de bloqueos de red
-    fetch(`/api/clima?lat=${lat}&lon=${lon}&fecha=${fecha}&hora=${hora}`)
-        .then(res => res.json())
+    // ENLACE CORREGIDO: Apuntamos de forma absoluta a tu backend real de producción en Vercel
+    const urlApi = `https://pasarela-clima.vercel.app{lat}&lon=${lon}&fecha=${fecha}&hora=${hora}`;
+
+    fetch(urlApi)
+        .then(res => {
+            if (!res.ok) throw new Error("Error en servidor API");
+            return res.json();
+        })
         .then(clima => {
-            if (clima) {
+            if (clima && clima.error === false) {
                 document.getElementById('localidad').innerText = clima.municipio + (clima.provincia ? " (" + clima.provincia + ")" : "");
-                document.getElementById('temp').innerText = clima.temp + " °C";
-                document.getElementById('wind').innerText = clima.hum + "% — " + clima.wind + " km/h";
-                document.getElementById('wbgt').innerText = clima.wbgt + " °C";
+                document.getElementById('api-temp').innerText = (clima.temp !== null) ? clima.temp + " °C" : "-- °C";
+                document.getElementById('api-wind').innerText = (clima.hum !== null) ? clima.hum + "% — " + clima.wind + " km/h" : "Conectando...";
+                document.getElementById('api-wbgt').innerText = (clima.wbgt !== null) ? clima.wbgt + " °C" : "-- °C";
                 
-                // Transmitimos de forma asíncrona a InfinityFree
+                // Transmitimos a InfinityFree de forma segura si está incrustado
                 window.parent.postMessage(clima, "*");
+            } else {
+                document.getElementById('temp').innerText = clima.mensaje || "Error de datos";
+                document.getElementById('temp').classList.add('error-text');
             }
         })
-        .catch(() => {
-            document.getElementById('temp').innerText = "Reconectando satélite...";
+        .catch(err => {
+            document.getElementById('temp').innerText = "Fallo de red al conectar con tu API";
+            document.getElementById('temp').classList.add('error-text');
         });
 })();
 </script>
 </body>
 </html>
-
 
 
 
