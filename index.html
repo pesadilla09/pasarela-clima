@@ -24,12 +24,12 @@
     const lat = parseFloat(params.get('lat')) || 37.4030;
     const lon = parseFloat(params.get('lon')) || -1.5830;
     
-    // Configuración cronológica exacta de la carrera
+    // Configuración exacta del entrenamiento del sábado
     const fecha = "2026-11-07";
-    const targetHour = fecha + "T17:00"; 
+    const horaTarget = 17; // Bloque de las 17:00 hs (Carrera de las 17:09)
 
-    // Forzamos la consulta al endpoint de rango reciente acotando las fechas de forma explícita
-    const url = "https://open-meteo.com" + lat + "&longitude=" + lon + "&start_date=" + fecha + "&end_date=" + fecha + "&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m&timezone=Europe%2FMadrid";
+    // Consultamos el endpoint de historial reciente de WeatherAPI con cabeceras CORS 100% abiertas
+    const url = "https://weatherapi.com" + lat.toFixed(4) + "," + lon.toFixed(4) + "&dt=" + fecha;
 
     fetch(url)
         .then(res => {
@@ -37,12 +37,15 @@
             throw new Error();
         })
         .then(data => {
-            if (data && data.hourly && data.hourly.time) {
-                const idx = data.hourly.time.indexOf(targetHour);
-                if (idx !== -1) {
-                    const t = data.hourly.temperature_2m[idx];
-                    const h = data.hourly.relative_humidity_2m[idx];
-                    const w = Math.round(data.hourly.wind_speed_10m[idx]);
+            if (data && data.forecast && data.forecast.forecastday && data.forecast.forecastday[0].hour) {
+                const hourRow = data.forecast.forecastday[0].hour[horaTarget];
+                
+                if (hourRow) {
+                    const t = hourRow.temp_c;
+                    const h = hourRow.humidity;
+                    const w = Math.round(hourRow.wind_kph);
+
+                    // Cálculo fisiológico del estrés térmico WBGT deportivo
                     const calculatedWbgt = Math.round((t * 0.7) + (t * (h / 100) * 0.3));
 
                     document.getElementById('temp').innerText = t + " °C";
@@ -56,11 +59,12 @@
             }
         })
         .catch(() => {
-            document.getElementById('temp').innerText = "Satélite en mantenimiento";
+            document.getElementById('temp').innerText = "Satélite fuera de cobertura";
         });
 })();
 </script>
 </body>
 </html>
+
 
 
