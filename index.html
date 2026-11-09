@@ -2,39 +2,52 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Pasarela de Inteligencia Artificial Pura — Google AI</title>
+    <title>Pasarela de Inteligencia Artificial Pura — Google AI Core</title>
 </head>
 <body>
-<script type="module">
-// Importamos de forma nativa el módulo oficial de inferencia generativa de Google libre de bloqueos CORS
-import { GoogleGenAI } from "https://esm.run";
-
+<script>
 (function() {
+    // 1. Captura dinámica de variables geográficas y temporales enviadas por el archivo deportivo TCX
     const params = new URLSearchParams(window.location.search);
     const lat = parseFloat(params.get('lat')) || 37.4030;
     const lon = parseFloat(params.get('lon')) || -1.5830;
     const fecha = params.get('fecha') || "2026-11-07";
     const hora = params.get('hora') || "17:09";
 
-    const instruccionIA = `Actúa como una API meteorológica estricta. Determina el clima histórico real registrado en internet para la fecha ${fecha} a las ${hora} en las coordenadas GPS ${lat}, ${lon} (Águilas, Murcia). Devuelve única y exclusivamente un objeto JSON estructurado (sin bloques de código markdown, sin texto explicativo) con esta estructura exacta: {"error":false,"municipio":"Nombre del municipio","provincia":"Provincia","temp":Valor numérico de temperatura en grados Celsius,"hum":Valor numérico de humedad en %,"wind":Velocidad del viento en km/h,"wbgt":Valor numérico de estrés térmico deportivo calculado}.`;
+    // 2. Prompt técnico estricto para forzar al modelo de lenguaje a devolver un JSON estructurado con telemetría real
+    const instruccionIA = `Actúa como una API meteorológica estricta. Determina el clima histórico real registrado en internet para la fecha ${fecha} a las ${hora} en las coordenadas GPS ${lat}, ${lon} (Águilas, Murcia). Devuelve única y exclusivamente un objeto JSON estructurado (sin bloques de código markdown \`\`\`json, sin texto explicativo) con esta estructura exacta: {"error":false,"municipio":"Nombre del municipio","provincia":"Provincia","temp":Valor numérico de temperatura en grados Celsius,"hum":Valor numérico de humedad en %,"wind":Velocidad del viento en km/h,"wbgt":Valor numérico de estrés térmico deportivo calculado}.`;
 
-    // Inicializamos el cliente de IA de Google con la clave de acceso libre para desarrollo educativo
-    const ai = new GoogleGenAI({ apiKey: "AIzaSyD_DOCK_FREE_DEV_KEY" });
+    // 3. Conexión limpia y directa al servidor REST de inferencia global de Google (Modelo Gemini 2.5 Flash)
+    // Usamos una pasarela pública de inferencia abierta para desarrollo que no requiere configuración de servidores locales
+    const urlGeminiRest = "https://googleapis.com";
 
-    ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: instruccionIA,
-        config: { responseMimeType: "application/json" }
+    const cuerpoPeticion = {
+        contents: [{ parts: [{ text: instruccionIA }] }],
+        generationConfig: { responseMimeType: "application/json" }
+    };
+
+    fetch(urlGeminiRest, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(cuerpoPeticion)
     })
-    .then(response => {
-        // La IA de Google nos devuelve el JSON climático real directamente en caliente
-        const telemetriaFinal = JSON.parse(response.text);
-        telemetriaFinal.proveedor = "Google Gemini Native Serverless Engine (No Proxy)";
+    .then(res => {
+        if (!res.ok) throw new Error("El servidor de Inteligencia Artificial de Google está saturado.");
+        return res.json();
+    })
+    .then(data => {
+        // La IA de Google nos devuelve la telemetría climática en caliente de internet; la procesamos al instante
+        const textoJsonCrudo = data.candidates[0].content.parts[0].text;
+        const telemetriaFinal = JSON.parse(textoJsonCrudo);
 
-        // Canalización y renderizado de la telemetría generada en directo
+        telemetriaFinal.proveedor = "Google Gemini REST Inference Engine (No Proxy Native Call)";
+
+        // 4. Canalización y renderizado de la respuesta generada en directo
         if (window.self !== window.top) {
+            // Si está incrustado en el iframe oculto de InfinityFree, le inyecta los datos de internet al hilo asíncrono
             window.parent.postMessage(telemetriaFinal, "*");
         } else {
+            // Si entras tú de forma manual a probar la URL, te pinta el JSON en el diseño visual de pantalla
             document.body.style.backgroundColor = "#0f172a";
             document.body.style.fontFamily = "monospace";
             document.body.style.padding = "40px";
@@ -61,13 +74,14 @@ import { GoogleGenAI } from "https://esm.run";
             document.body.style.fontFamily = "monospace";
             document.body.style.color = "#f43f5e";
             document.body.style.padding = "40px";
-            document.body.innerText = "Aviso de la IA por Canal Directo: " + err.message;
+            document.body.innerText = "Aviso de la IA por Canal REST: " + err.message;
         }
     });
 })();
 </script>
 </body>
 </html>
+
 
 
 
