@@ -4,6 +4,7 @@
 <body>
 <script>
 (function() {
+    // Captura los parámetros dinámicos que le envía el código PHP del TCX
     const params = new URLSearchParams(window.location.search);
     const lat = parseFloat(params.get('lat'));
     const lon = parseFloat(params.get('lon'));
@@ -16,22 +17,20 @@
     }
 
     const horaCorte = hora.substring(0, 2) + ":00:00"; 
-    let resultado = { error: false, municipio: "", provincia: "", temp: "", hum: "", wind: "", wbgt: "" };
+    let resultado = { error: false, municipio: "Zona Rural", provincia: "", temp: "--", hum: "--", wind: "--", wbgt: "--" };
 
-    // 1. Consulta Geográfica del Municipio por Coordenadas reales de internet
-    const urlGeo = `https://open-meteo.com{lat.toFixed(4)}&longitude=${lon.toFixed(4)}&current=&hourly=&local_meteo_id=open-meteo-geocoding`;
-    
-    // Usamos el endpoint de archivo histórico oficial para recuperar los datos reales de internet de la fecha del TCX
-    const urlClima = `https://open-meteo.com{lat.toFixed(4)}&longitude=${lon.toFixed(4)}&start_date=${fecha}&end_date=${fecha}&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m&timezone=Europe%2FMadrid`;
+    // Construcción limpia de la URL de consulta al satélite histórico consolidado
+    const urlClima = "https://open-meteo.com" + lat.toFixed(4) + "&longitude=" + lon.toFixed(4) + "&start_date=" + fecha + "&end_date=" + fecha + "&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m&timezone=Europe%2FMadrid";
 
-    // Intentamos recuperar la geolocalización inversa real
-    fetch(`https://openstreetmap.org{lat}&lon=${lon}&zoom=10&addressdetails=1`)
+    // 1. Consulta Geográfica del Municipio por Coordenadas (Geocodificación Libre Abierta)
+    fetch("https://open-meteo.com" + lat.toFixed(4) + "&longitude=" + lon.toFixed(4) + "&language=es&format=json")
         .then(res => res.json())
-        .then(geo => {
-            if (geo && geo.address) {
-                resultado.municipio = geo.address.city || geo.address.town || geo.address.village || geo.address.county || "Zona Rural";
-                resultado.provincia = geo.address.province || geo.address.state || "";
+        .then(geoData => {
+            if (geoData && geoData.results && geoData.results.length > 0) {
+                resultado.municipio = geoData.results[0].name || "Zona Rural";
+                resultado.provincia = geoData.results[0].admin1 || "";
             }
+            // 2. Consulta Meteorológica Real de Internet
             return fetch(urlClima);
         })
         .then(res => {
@@ -40,20 +39,18 @@
         })
         .then(data => {
             if (data && data.hourly && data.hourly.time) {
-                const idx = data.hourly.time.indexOf(fecha + "T" + hora.substring(0, 2) + ":00");
+                const targetTimestamp = fecha + "T" + horaCorte.substring(0, 5);
+                const idx = data.hourly.time.indexOf(targetTimestamp);
+                
                 if (idx !== -1) {
                     resultado.temp = data.hourly.temperature_2m[idx];
                     resultado.hum = data.hourly.relative_humidity_2m[idx];
                     resultado.wind = Math.round(data.hourly.wind_speed_10m[idx]);
                     resultado.wbgt = Math.round((resultado.temp * 0.7) + (resultado.temp * (resultado.hum / 100) * 0.3));
-                    
-                    window.parent.postMessage(resultado, "*");
-                } else {
-                    throw new Error("Bloque horario no consolidado");
                 }
-            } else {
-                throw new Error("Estructura inválida");
             }
+            // Transmitimos el paquete de datos limpio al archivo principal de InfinityFree
+            window.parent.postMessage(resultado, "*");
         })
         .catch(err => {
             window.parent.postMessage({ error: true, mensaje: err.message }, "*");
@@ -62,6 +59,7 @@
 </script>
 </body>
 </html>
+
 
 
 
