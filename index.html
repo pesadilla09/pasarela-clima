@@ -2,65 +2,191 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
     <title>Pasarela de Clima Real — RunningLab</title>
+
     <style>
-        body { font-family: monospace; background: #0f172a; color: #38bdf8; margin: 0; padding: 20px; font-size: 14px; }
-        .grid-clima { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 15px; background: #0f172a; padding: 15px; border-radius: 10px; border: 1px solid #334155; max-width: 700px; margin: 0 auto; }
-        .forma-box { background: #1e293b; padding: 12px; border-radius: 8px; border: 1px solid #334155; }
-        .forma-box span { display: block; color: #94a3b8; font-size: 0.85em; text-transform: uppercase; font-weight: bold; }
-        .forma-box strong { display: block; color: #f8fafc; font-size: 1.25em; margin-top: 4px; font-weight: 600; }
-        .success-text { color: #34d399 !important; }
-        .error-text { color: #f43f5e !important; }
+        body {
+            font-family: monospace;
+            background: #0f172a;
+            color: #38bdf8;
+            margin: 0;
+            padding: 20px;
+            font-size: 14px;
+        }
+
+        .grid-clima {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 15px;
+            background: #0f172a;
+            padding: 15px;
+            border-radius: 10px;
+            border: 1px solid #334155;
+            max-width: 700px;
+            margin: 0 auto;
+        }
+
+        .forma-box {
+            background: #1e293b;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid #334155;
+        }
+
+        .forma-box span {
+            display: block;
+            color: #94a3b8;
+            font-size: 0.85em;
+            text-transform: uppercase;
+            font-weight: bold;
+        }
+
+        .forma-box strong {
+            display: block;
+            color: #f8fafc;
+            font-size: 1.15em;
+            margin-top: 8px;
+            font-weight: 600;
+            overflow-wrap: anywhere;
+        }
+
+        .success-text {
+            color: #34d399 !important;
+        }
+
+        .error-text {
+            color: #f43f5e !important;
+        }
     </style>
 </head>
+
 <body>
 
 <div class="grid-clima">
-    <div class="forma-box"><span>📍 Ubicación Satélite</span><strong id="localidad" class="success-text">Buscando...</strong></div>
-    <div class="forma-box"><span>Real Satélite Weather</span><strong id="temp">Conectando...</strong></div>
-    <div class="forma-box"><span>Real Hum / Wind</span><strong id="wind">Conectando...</strong></div>
-    <div class="forma-box"><span>Estrés Fisiológico WBGT</span><strong id="wbgt">-- °C</strong></div>
+
+    <div class="forma-box">
+        <span>📍 Ubicación satélite</span>
+        <strong id="localidad" class="success-text">
+            Buscando...
+        </strong>
+    </div>
+
+    <div class="forma-box">
+        <span>🌡️ Temperatura real</span>
+        <strong id="temp">Conectando...</strong>
+    </div>
+
+    <div class="forma-box">
+        <span>💧 Humedad / Viento</span>
+        <strong id="wind">Conectando...</strong>
+    </div>
+
+    <div class="forma-box">
+        <span>🔥 Estrés fisiológico WBGT</span>
+        <strong id="wbgt">-- °C</strong>
+    </div>
+
 </div>
 
 <script>
 (function() {
+
+    // 1. Parámetros recibidos desde la URL
     const params = new URLSearchParams(window.location.search);
-    const lat = params.get('lat') || "37.4030";
-    const lon = params.get('lon') || "-1.5830";
-    const fecha = params.get('fecha') || "2026-11-07";
-    const hora = params.get('hora') || "17:09";
 
-    // ENLACE CORREGIDO: Apuntamos de forma absoluta a tu backend real de producción en Vercel
-    const urlApi = `https://pasarela-clima.vercel.app{lat}&lon=${lon}&fecha=${fecha}&hora=${hora}`;
+    const lat = params.get('lat') || '37.4030';
+    const lon = params.get('lon') || '-1.5830';
+    const fecha = params.get('fecha') || '2026-11-07';
+    const hora = params.get('hora') || '17:09';
 
+    // 2. Dirección de tu API de Vercel
+    const urlApi =
+        `https://pasarela-clima.vercel.app/api/clima` +
+        `?lat=${encodeURIComponent(lat)}` +
+        `&lon=${encodeURIComponent(lon)}` +
+        `&fecha=${encodeURIComponent(fecha)}` +
+        `&hora=${encodeURIComponent(hora)}`;
+
+    // 3. Elementos de pantalla
+    const localidad = document.getElementById('localidad');
+    const temp = document.getElementById('temp');
+    const wind = document.getElementById('wind');
+    const wbgt = document.getElementById('wbgt');
+
+    // 4. Conexión con Vercel
     fetch(urlApi)
+
         .then(res => {
-            if (!res.ok) throw new Error("Error en servidor API");
+            if (!res.ok) {
+                throw new Error('Error HTTP ' + res.status);
+            }
             return res.json();
         })
+
         .then(clima => {
-            if (clima && clima.error === false) {
-                document.getElementById('localidad').innerText = clima.municipio + (clima.provincia ? " (" + clima.provincia + ")" : "");
-                document.getElementById('api-temp').innerText = (clima.temp !== null) ? clima.temp + " °C" : "-- °C";
-                document.getElementById('api-wind').innerText = (clima.hum !== null) ? clima.hum + "% — " + clima.wind + " km/h" : "Conectando...";
-                document.getElementById('api-wbgt').innerText = (clima.wbgt !== null) ? clima.wbgt + " °C" : "-- °C";
-                
-                // Transmitimos a InfinityFree de forma segura si está incrustado
-                window.parent.postMessage(clima, "*");
+
+            if (clima.error === false) {
+
+                localidad.innerText =
+                    clima.municipio +
+                    (clima.provincia
+                        ? ' (' + clima.provincia + ')'
+                        : '');
+
+                temp.innerText =
+                    clima.temp !== null
+                        ? clima.temp + ' °C'
+                        : '-- °C';
+
+                wind.innerText =
+                    clima.hum !== null
+                        ? clima.hum + '% — ' + clima.wind + ' km/h'
+                        : '--';
+
+                wbgt.innerText =
+                    clima.wbgt !== null
+                        ? clima.wbgt + ' °C'
+                        : 'No disponible';
+
+                // 5. Transmitir datos al documento padre
+                if (window.parent !== window) {
+                    window.parent.postMessage(clima, '*');
+                }
+
+                console.log('RUNNINGLAB - DATOS RECIBIDOS:', clima);
+
             } else {
-                document.getElementById('temp').innerText = clima.mensaje || "Error de datos";
-                document.getElementById('temp').classList.add('error-text');
+
+                temp.innerText =
+                    clima.mensaje || 'Error de datos';
+
+                temp.classList.add('error-text');
             }
+
         })
+
         .catch(err => {
-            document.getElementById('temp').innerText = "Fallo de red al conectar con tu API";
-            document.getElementById('temp').classList.add('error-text');
+
+            localidad.innerText = 'Error de conexión';
+            localidad.classList.add('error-text');
+
+            temp.innerText = 'Fallo de conexión con Vercel';
+            temp.classList.add('error-text');
+
+            wind.innerText = '--';
+            wbgt.innerText = '--';
+
+            console.error('RUNNINGLAB ERROR:', err);
+
         });
+
 })();
 </script>
+
 </body>
 </html>
-
 
 
 
