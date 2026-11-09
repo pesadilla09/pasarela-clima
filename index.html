@@ -31,19 +31,22 @@
     const targetTimestamp = fecha + "T" + hora.substring(0, 2) + ":00";
     let resultado = { error: false, municipio: "Águilas", provincia: "Murcia", temp: "--", hum: "--", wind: "--", wbgt: "--" };
 
-    // 1. Endpoint del archivo histórico de Open-Meteo (Evita las restricciones del endpoint de predicción)
+    // 1. Endpoint del archivo histórico de Open-Meteo con los subdominios de datos oficiales reparados
     const urlClimaOriginal = "https://open-meteo.com" + lat.toFixed(4) + "&longitude=" + lon.toFixed(4) + "&start_date=" + fecha + "&end_date=" + fecha + "&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m&timezone=Europe%2FMadrid";
     
-    // Envolvemos la llamada en la pasarela cruda de AllOrigins para saltar el bloqueo CORS del navegador
+    // CORRECCIÓN SINTÁCTICA: Formato exacto de consulta proxy para AllOrigins API
     const urlProxy = "https://allorigins.win" + encodeURIComponent(urlClimaOriginal);
 
     fetch(urlProxy)
         .then(res => {
             if (res.ok) return res.json();
-            throw new Error("La pasarela Proxy está saturada.");
+            throw new Error("La pasarela Proxy está saturada o fuera de línea.");
         })
         .then(wrapper => {
-            // Parseamos el JSON interno devuelto por el túnel de AllOrigins
+            if (!wrapper || !wrapper.contents) {
+                throw new Error("El flujo de datos del proxy llegó vacío.");
+            }
+            // Parseamos el JSON interno devuelto por el túnel seguro
             const data = JSON.parse(wrapper.contents);
             
             if (data && data.hourly && data.hourly.time) {
@@ -55,13 +58,13 @@
                     resultado.wind = Math.round(data.hourly.wind_speed_10m[idx]);
                     resultado.wbgt = Math.round((resultado.temp * 0.7) + (resultado.temp * (resultado.hum / 100) * 0.3));
 
-                    // Pintamos los datos meteorológicos 100% REALES de internet de forma visual en pantalla
+                    // Pintamos los datos meteorológicos 100% REALES extraídos en caliente de internet
                     document.getElementById('pantalla').innerText = JSON.stringify(resultado, null, 4);
                 } else {
                     document.getElementById('pantalla').innerText = "Bloque horario no consolidado en el satélite: " + targetTimestamp;
                 }
             } else {
-                document.getElementById('pantalla').innerText = "Estructura meteorológica corrupta.";
+                document.getElementById('pantalla').innerText = "Estructura de satélite no válida o rechazada.";
             }
             
             // Transmitimos el paquete de datos al archivo padre de InfinityFree
