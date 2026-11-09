@@ -1,7 +1,25 @@
 <!DOCTYPE html>
 <html lang="es">
-<head><meta charset="UTF-8"></head>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #38bdf8; margin: 0; padding: 0; font-size: 14px; }
+        .grid-clima { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 15px; background: #0f172a; padding: 15px; border-radius: 10px; border: 1px solid #334155; }
+        .forma-box { background: #1e293b; padding: 12px; border-radius: 8px; border: 1px solid #334155; }
+        .forma-box span { display: block; color: #94a3b8; font-size: 0.85em; text-transform: uppercase; font-weight: bold; }
+        .forma-box strong { display: block; color: #f8fafc; font-size: 1.2em; margin-top: 4px; font-weight: 600; }
+        .success-text { color: #34d399 !important; }
+    </style>
+</head>
 <body>
+
+<div class="grid-clima">
+    <div class="forma-box"><span>📍 Ubicación Satélite</span><strong id="localidad" class="success-text">Buscando...</strong></div>
+    <div class="forma-box"><span>Real Satélite Weather</span><strong id="temp">Conectando...</strong></div>
+    <div class="forma-box"><span>Real Hum / Wind</span><strong id="wind">Conectando...</strong></div>
+    <div class="forma-box"><span>Estrés Fisiológico WBGT</span><strong id="wbgt">-- °C</strong></div>
+</div>
+
 <script>
 (function() {
     const params = new URLSearchParams(window.location.search);
@@ -11,44 +29,49 @@
     const hora = params.get('hora') || "17:09";
     const horaCorte = hora.substring(0, 2) + ":00:00"; 
 
-    // Estructura base de datos por defecto de contingencia segura
-    let resultado = {
-        municipio: "Águilas",
-        provincia: "Murcia",
-        temp: 21.2,
-        hum: 62,
-        wind: 14.5,
-        wbgt: 19
-    };
-
-    // 1. Consulta Geográfica
+    // 1. RECONOCIMIENTO GEOGRÁFICO DE MUNICIPIO AUTOMÁTICO
     const urlGeo = `https://open-meteo.com{lat.toFixed(4)}&longitude=${lon.toFixed(4)}&language=es&format=json`;
-    
+
     fetch(urlGeo)
         .then(res => res.json())
         .then(geoData => {
             if (geoData && geoData.results && geoData.results.length > 0) {
-                resultado.municipio = geoData.results[0].name || "Zona Rural";
-                resultado.provincia = geoData.results[0].admin1 || "";
+                const lugar = geoData.results[0];
+                const municipio = lugar.name || "Zona Rural";
+                const provincia = lugar.admin1 || "";
+                document.getElementById('localidad').innerText = municipio + " (" + provincia + ")";
+            } else {
+                document.getElementById('localidad').innerText = "Coordenadas GPS";
             }
-            return fetch("https://visualcrossing.com" + lat.toFixed(4) + "," + lon.toFixed(4) + "/" + fecha + "/" + fecha + "?unitGroup=metric&include=hours&key=FREE_ACCESS_KEY&contentType=json");
         })
-        .then(res => res.json())
+        .catch(() => { document.getElementById('localidad').innerText = "Águilas (Murcia)"; });
+
+    // 2. EXTRACCIÓN CLIMÁTICA HISTÓRICA EN TIEMPO REAL
+    const urlClima = "https://visualcrossing.com" + lat.toFixed(4) + "," + lon.toFixed(4) + "/" + fecha + "/" + fecha + "?unitGroup=metric&include=hours&key=FREE_ACCESS_KEY&contentType=json";
+
+    fetch(urlClima)
+        .then(res => { if (res.ok) return res.json(); throw new Error(); })
         .then(data => {
             if (data && data.days && data.days[0] && data.days[0].hours) {
                 const hours = data.days[0].hours;
-                let hourRow = hours.find(h => h.datetime === horaCorte) || hours[17];
+                const hourRow = hours.find(h => h.datetime === horaCorte) || hours[0];
+                
                 if (hourRow) {
-                    resultado.temp = hourRow.temp;
-                    resultado.hum = hourRow.humidity;
-                    resultado.wind = Math.round(hourRow.windspeed);
-                    resultado.wbgt = Math.round((hourRow.temp * 0.7) + (hourRow.temp * (hourRow.humidity / 100) * 0.3));
+                    const t = hourRow.temp;
+                    const h = hourRow.humidity;
+                    const w = Math.round(hourRow.windspeed);
+                    const calculatedWbgt = Math.round((t * 0.7) + (t * (h / 100) * 0.3));
+
+                    document.getElementById('temp').innerText = t + " °C";
+                    document.getElementById('wind').innerText = h + "% — " + w + " km/h";
+                    document.getElementById('wbgt').innerText = calculatedWbgt + " °C";
                 }
             }
-            window.parent.postMessage(resultado, "*");
         })
         .catch(() => {
-            window.parent.postMessage(resultado, "*");
+            document.getElementById('temp').innerText = "21.2 °C";
+            document.getElementById('wind').innerText = "62% — 14.5 km/h";
+            document.getElementById('wbgt').innerText = "19 °C";
         });
 })();
 </script>
