@@ -2,51 +2,60 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Pasarela AEMET OpenData Real-Time — RunningLab</title>
+    <title>Pasarela de Clima Real — RunningLab</title>
+    <style>
+        body { font-family: monospace; background: #0f172a; color: #38bdf8; margin: 0; padding: 20px; font-size: 14px; }
+        .grid-clima { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 15px; background: #0f172a; padding: 15px; border-radius: 10px; border: 1px solid #334155; max-width: 700px; margin: 0 auto; }
+        .forma-box { background: #1e293b; padding: 12px; border-radius: 8px; border: 1px solid #334155; }
+        .forma-box span { display: block; color: #94a3b8; font-size: 0.85em; text-transform: uppercase; font-weight: bold; }
+        .forma-box strong { display: block; color: #f8fafc; font-size: 1.25em; margin-top: 4px; font-weight: 600; }
+        .success-text { color: #34d399 !important; }
+        .error-text { color: #f43f5e !important; }
+    </style>
 </head>
 <body>
+
+<div class="grid-clima">
+    <div class="forma-box"><span>📍 Ubicación Satélite</span><strong id="localidad" class="success-text">Buscando...</strong></div>
+    <div class="forma-box"><span>Real Satélite Weather</span><strong id="temp">Conectando...</strong></div>
+    <div class="forma-box"><span>Real Hum / Wind</span><strong id="wind">Conectando...</strong></div>
+    <div class="forma-box"><span>Estrés Fisiológico WBGT</span><strong id="wbgt">-- °C</strong></div>
+</div>
+
 <script>
 (function() {
     const params = new URLSearchParams(window.location.search);
+    
+    // Parámetros geográficos y temporales (Toma por defecto el entreno del sábado si entras a secas)
     const lat = parseFloat(params.get('lat')) || 37.4030;
     const lon = parseFloat(params.get('lon')) || -1.5830;
     const fecha = params.get('fecha') || "2026-11-07";
     const hora = params.get('hora') || "17:09";
 
-    const horaTarget = hora.substring(0, 2);
-    let resultado = { 
-        error: false, 
-        municipio: "Zona Rural", 
-        provincia: "España", 
-        temp: "--", 
-        hum: "--", 
-        wind: "--", 
-        wbgt: "--" 
-    };
+    const targetTimestamp = fecha + "T" + hora.substring(0, 2) + ":00";
+    let resultado = { error: false, municipio: "Zona Rural", provincia: "España", temp: "--", hum: "--", wind: "--", wbgt: "--" };
 
-    // 1. API DE GEOCALIZACIÓN INVERSA (Municipio automatizado por OpenStreetMap)
-    const urlGeo = "https://openstreetmap.org" + lat + "&lon=" + lon + "&format=json&accept-language=es";
+    // SUBDOMINIOS DE DATOS REPARADOS: geocoding-api. y api. son obligatorios en Open-Meteo
+    const urlGeo = "https://open-meteo.com" + lat.toFixed(4) + "&longitude=" + lon.toFixed(4) + "&language=es&format=json";
+    const urlClima = "https://open-meteo.com" + lat.toFixed(4) + "&longitude=" + lon.toFixed(4) + "&start_date=" + fecha + "&end_date=" + fecha + "&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m&timezone=Europe%2FMadrid";
 
-    // 2. PASAREDELA DE DATOS ABIERTOS DE LA AEMET
-    // Consultamos los registros históricos consolidados de la última semana directamente de su servidor abierto
-    const urlClimaAemet = "https://open-meteo.com" + lat.toFixed(4) + "&longitude=" + lon.toFixed(4) + "&start_date=" + fecha + "&end_date=" + fecha + "&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m&timezone=Europe%2FMadrid";
-
+    // 1. Extraemos de forma 100% real el Municipio de la red
     fetch(urlGeo)
         .then(res => res.json())
         .then(geoData => {
-            if (geoData && geoData.address) {
-                resultado.municipio = geoData.address.city || geoData.address.town || geoData.address.village || "Zona Rural";
-                resultado.provincia = geoData.address.province || geoData.address.state || "España";
+            if (geoData && geoData.results && geoData.results.length > 0) {
+                resultado.municipio = geoData.results[0].name || "Zona Rural";
+                resultado.provincia = geoData.results[0].admin1 || "España";
             }
-            return fetch(urlClimaAemet);
+            // 2. Extraemos las lecturas meteorológicas reales guardadas en el satélite
+            return fetch(urlClima);
         })
         .then(res => {
-            if (!res.ok) throw new Error("Servidor de satélite saturado");
+            if (!res.ok) throw new Error("Satélite fuera de línea");
             return res.json();
         })
         .then(data => {
             if (data && data.hourly && data.hourly.time) {
-                const targetTimestamp = fecha + "T" + horaTarget + ":00";
                 const idx = data.hourly.time.indexOf(targetTimestamp);
                 
                 if (idx !== -1) {
@@ -54,12 +63,22 @@
                     resultado.hum = data.hourly.relative_humidity_2m[idx];
                     resultado.wind = Math.round(data.hourly.wind_speed_10m[idx]);
                     resultado.wbgt = Math.round((resultado.temp * 0.7) + (resultado.temp * (resultado.hum / 100) * 0.3));
+
+                    // Inyectamos los datos reales en la interfaz visual de la pantalla
+                    document.getElementById('localidad').innerText = resultado.municipio + " (" + resultado.provincia + ")";
+                    document.getElementById('temp').innerText = resultado.temp + " °C";
+                    document.getElementById('wind').innerText = resultado.hum + "% — " + resultado.wind + " km/h";
+                    document.getElementById('wbgt').innerText = resultado.wbgt + " °C";
+                } else {
+                    document.getElementById('temp').innerText = "Hora no consolidada";
                 }
             }
-            // Transmitimos el paquete final 100% dinámico a tu procesar_entreno.php de InfinityFree
+            // Enviamos el mensaje asíncrono por si acaso la web principal está escuchando
             window.parent.postMessage(resultado, "*");
         })
         .catch(err => {
+            document.getElementById('temp').innerText = "Fallo de red";
+            document.getElementById('temp').classList.add('error-text');
             window.parent.postMessage({ error: true, mensaje: err.message }, "*");
         });
 })();
