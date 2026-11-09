@@ -22,66 +22,64 @@
 (function() {
     const params = new URLSearchParams(window.location.search);
     
-    // Parámetros geográficos dinámicos extraídos del reloj deportivo
+    // Captura dinámica: si entras directo toma por defecto Águilas para la prueba visual
     const lat = parseFloat(params.get('lat')) || 37.4030;
     const lon = parseFloat(params.get('lon')) || -1.5830;
     const fecha = params.get('fecha') || "2026-11-07";
     const hora = params.get('hora') || "17:09";
 
-    const targetHourStr = hora.substring(0, 2) + ":00:00";
+    const targetTimestamp = fecha + "T" + hora.substring(0, 2) + ":00";
 
     let resultado = { 
         error: false, 
-        municipio: "Águilas", 
-        provincia: "Murcia", 
+        municipio: "Zona Rural", 
+        provincia: "España", 
         temp: "--", 
         hum: "--", 
         wind: "--", 
         wbgt: "--" 
     };
 
-    // Consultamos la red climatológica global con CORS totalmente abiertos y libres de bloqueo de IP
-    const urlMundial = "https://weather.gov" + lat.toFixed(4) + "," + lon.toFixed(4);
+    // SUBDOMINIOS DE DATOS CORRECTOS: api. y geocoding-api. obligatorios para Open-Meteo
+    const urlClima = "https://open-meteo.com" + lat.toFixed(4) + "&longitude=" + lon.toFixed(4) + "&start_date=" + fecha + "&end_date=" + fecha + "&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m&timezone=Europe%2FMadrid";
+    const urlGeo = "https://open-meteo.com" + lat.toFixed(4) + "&longitude=" + lon.toFixed(4) + "&language=es&format=json";
 
-    fetch(urlMundial)
-        .then(res => {
-            if (!res.ok) {
-                // Pasarela de respaldo nativa de contingencia climática directa
-                resultado.temp = 21.2;
-                resultado.hum = 62;
-                resultado.wind = 14.5;
-                resultado.wbgt = 19;
-                throw new Error("Modo de transmisión directa activado.");
+    // 1. Extraemos el Municipio de internet
+    fetch(urlGeo)
+        .then(res => res.json())
+        .then(geoData => {
+            if (geoData && geoData.results && geoData.results.length > 0) {
+                resultado.municipio = geoData.results[0].name || "Zona Rural";
+                resultado.provincia = geoData.results[0].admin1 || "España";
             }
+            // 2. Extraemos el Clima de la fecha del entreno
+            return fetch(urlClima);
+        })
+        .then(res => {
+            if (!res.ok) throw new Error("Código de respuesta de satélite: " + res.status);
             return res.json();
         })
-        .then(pointData => {
-            const forecastHourlyUrl = pointData.properties.forecastHourly;
-            return fetch(forecastHourlyUrl);
-        })
-        .then(res => res.json())
-        .then(climaData => {
-            if (climaData && climaData.properties && climaData.properties.periods) {
-                const periods = climaData.properties.periods;
-                // Buscamos dinámicamente el bloque horario real guardado en la base de datos de internet
-                const bloque = periods.find(p => p.startTime.includes(fecha) && p.startTime.includes(targetHourStr.substring(0,2)));
+        .then(data => {
+            if (data && data.hourly && data.hourly.time) {
+                const idx = data.hourly.time.indexOf(targetTimestamp);
                 
-                if (bloque) {
-                    // Conversión exacta a sistema métrico europeo
-                    resultado.temp = Math.round((bloque.temperature - 32) * 5 / 9 * 10) / 10;
-                    resultado.hum = 62; // Humedad relativa media indexada de carrera
-                    resultado.wind = Math.round(bloque.windSpeed.split(" ")[0] * 1.609 * 10) / 10; // Mph a km/h
+                if (idx !== -1) {
+                    resultado.temp = data.hourly.temperature_2m[idx];
+                    resultado.hum = data.hourly.relative_humidity_2m[idx];
+                    resultado.wind = Math.round(data.hourly.wind_speed_10m[idx]);
                     resultado.wbgt = Math.round((resultado.temp * 0.7) + (resultado.temp * (resultado.hum / 100) * 0.3));
                 }
             }
             
+            // Imprimimos el objeto en la pantalla de pruebas
             document.getElementById('pantalla').innerText = JSON.stringify(resultado, null, 4);
+            
+            // Enviamos el mensaje al archivo principal de InfinityFree
             window.parent.postMessage(resultado, "*");
         })
-        .catch(() => {
-            // El motor calcula el flujo y le devuelve a la pantalla las variables reales leídas de la red
-            document.getElementById('pantalla').innerText = JSON.stringify(resultado, null, 4);
-            window.parent.postMessage(resultado, "*");
+        .catch(err => {
+            document.getElementById('pantalla').innerText = "Fallo de comunicación: " + err.message;
+            window.parent.postMessage({ error: true, mensaje: err.message }, "*");
         });
 })();
 </script>
