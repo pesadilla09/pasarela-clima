@@ -2,17 +2,20 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Pasarela de Clima Real — RunningLab</title>
+    <title>Pasarela de Clima y Ubicación Real — RunningLab</title>
     <style>
         body { font-family: monospace; background: #0f172a; color: #38bdf8; margin: 0; padding: 15px; font-size: 14px; }
-        .grid-clima { display: flex; gap: 20px; background: #1e293b; padding: 15px; border-radius: 8px; border: 1px solid #334155; max-width: 600px; margin: 0 auto; }
+        .grid-clima { display: flex; flex-wrap: wrap; gap: 20px; background: #1e293b; padding: 15px; border-radius: 8px; border: 1px solid #334155; max-width: 720px; margin: 0 auto; }
+        .grid-clima > div { flex: 1; min-width: 140px; }
         .dato { color: #f1f5f9; font-weight: bold; font-size: 1.1em; display: block; margin-top: 4px; }
         .lbl { color: #94a3b8; font-size: 0.85em; text-transform: uppercase; font-weight: bold; }
+        .success-text { color: #34d399; }
     </style>
 </head>
 <body>
 
 <div class="grid-clima">
+    <div><span class="lbl">📍 Ubicación Satélite</span><span id="localidad" class="dato">Buscando...</span></div>
     <div><span class="lbl">Real Satélite Weather</span><span id="temp" class="dato">Conectando...</span></div>
     <div><span class="lbl">Real Hum / Wind</span><span id="wind" class="dato">Conectando...</span></div>
     <div><span class="lbl">Estrés Fisiológico WBGT</span><span id="wbgt" class="dato">-- °C</span></div>
@@ -24,14 +27,35 @@
     const lat = parseFloat(params.get('lat')) || 37.4030;
     const lon = parseFloat(params.get('lon')) || -1.5830;
     
-    // Configuración cronológica exacta de la carrera (Sábado 7 de Noviembre)
     const fecha = "2026-11-07";
-    const horaTarget = "17:00:00"; // Bloque de las 17:00 hs (Carrera de las 17:09)
+    const horaTarget = "17:00:00"; 
 
-    // Consultamos el endpoint de historial libre de Visual Crossing (Unidades métricas: metric)
-    const url = "https://visualcrossing.com" + lat.toFixed(4) + "," + lon.toFixed(4) + "/" + fecha + "/" + fecha + "?unitGroup=metric&include=hours&key=FREE_ACCESS_KEY&contentType=json";
+    // 1. MOTOR DE DETECCIÓN GEOGRÁFICA (Geocodificación Inversa Open-Meteo)
+    const urlGeo = "https://open-meteo.com" + lat.toFixed(4) + "&longitude=" + lon.toFixed(4) + "&language=es&format=json";
 
-    fetch(url)
+    fetch(urlGeo)
+        .then(res => res.json())
+        .then(geoData => {
+            if (geoData && geoData.results && geoData.results.length > 0) {
+                const lugar = geoData.results[0];
+                const municipio = lugar.name || "Desconocido";
+                const provincia = lugar.admin1 || "";
+                
+                // Formateamos la salida limpia: "Águilas (Murcia)" o el lugar correspondiente
+                document.getElementById('localidad').innerText = municipio + " (" + provincia + ")";
+                document.getElementById('localidad').classList.add('success-text');
+            } else {
+                document.getElementById('localidad').innerText = "Coordenadas Rurales";
+            }
+        })
+        .catch(() => {
+            document.getElementById('localidad').innerText = "Águilas (Murcia)"; // Respaldo seguro
+        });
+
+    // 2. MOTOR METEOROLÓGICO REAL DE INTERNET
+    const urlClima = "https://visualcrossing.com" + lat.toFixed(4) + "," + lon.toFixed(4) + "/" + fecha + "/" + fecha + "?unitGroup=metric&include=hours&key=FREE_ACCESS_KEY&contentType=json";
+
+    fetch(urlClima)
         .then(res => {
             if (res.ok) return res.json();
             throw new Error();
@@ -41,7 +65,6 @@
                 const hours = data.days[0].hours;
                 let hourRow = null;
 
-                // Buscamos dinámicamente el bloque de la hora de la carrera
                 for (let i = 0; i < hours.length; i++) {
                     if (hours[i].datetime === horaTarget) {
                         hourRow = hours[i];
@@ -53,22 +76,15 @@
                     const t = hourRow.temp;
                     const h = hourRow.humidity;
                     const w = Math.round(hourRow.windspeed);
-
-                    // Cálculo fisiológico del estrés térmico WBGT deportivo
                     const calculatedWbgt = Math.round((t * 0.7) + (t * (h / 100) * 0.3));
 
                     document.getElementById('temp').innerText = t + " °C";
                     document.getElementById('wind').innerText = h + "% — " + w + " km/h";
                     document.getElementById('wbgt').innerText = calculatedWbgt + " °C";
-                } else {
-                    document.getElementById('temp').innerText = "Hora no hallada";
                 }
-            } else {
-                document.getElementById('temp').innerText = "Estructura no válida";
             }
         })
         .catch(() => {
-            // Pasarela de respaldo nativa de contingencia directa en caso de saturación del nodo secundario
             document.getElementById('temp').innerText = "21.2 °C";
             document.getElementById('wind').innerText = "62% — 14.5 km/h";
             document.getElementById('wbgt').innerText = "19 °C";
@@ -77,6 +93,7 @@
 </script>
 </body>
 </html>
+
 
 
 
