@@ -11,8 +11,6 @@
 <body>
 
 <h3>📡 Datos del Satélite Recuperados en Directo de Internet:</h3>
-<p>Si ves los números aquí abajo, el motor de Vercel funciona al 100% y el problema es la caché de tu navegador.</p>
-
 <pre id="pantalla">Cargando telemetría real desde internet...</pre>
 
 <script>
@@ -23,28 +21,40 @@
     const fecha = params.get('fecha') || "2026-11-07";
     const hora = params.get('hora') || "17:09";
 
-    const horaCorte = hora.substring(0, 2) + ":00:00"; 
+    const horaCorte = hora.substring(0, 2) + ":00"; 
     let resultado = { error: false, municipio: "Zona Rural", provincia: "España", temp: "--", hum: "--", wind: "--", wbgt: "--" };
 
-    const urlClima = "https://open-meteo.com" + lat.toFixed(4) + "&longitude=" + lon.toFixed(4) + "&start_date=" + fecha + "&end_date=" + fecha + "&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m&timezone=Europe%2FMadrid";
-    const urlGeo = "https://open-meteo.com" + lat.toFixed(4) + "&longitude=" + lon.toFixed(4) + "&language=es&format=json";
+    // Constructor de URL nativo para evitar corrupciones de texto o bloqueos de parseo
+    const urlClima = new URL("https://open-meteo.com");
+    urlClima.searchParams.append("latitude", lat.toFixed(4));
+    urlClima.searchParams.append("longitude", lon.toFixed(4));
+    urlMeteo.searchParams.append("start_date", fecha);
+    urlMeteo.searchParams.append("end_date", fecha);
+    urlMeteo.searchParams.append("hourly", "temperature_2m,relative_humidity_2m,wind_speed_10m");
+    urlMeteo.searchParams.append("timezone", "Europe/Madrid");
 
-    fetch(urlGeo)
+    const urlGeo = new URL("https://open-meteo.com");
+    urlGeo.searchParams.append("latitude", lat.toFixed(4));
+    urlGeo.searchParams.append("longitude", lon.toFixed(4));
+    urlGeo.searchParams.append("language", "es");
+    urlGeo.searchParams.append("format", "json");
+
+    fetch(urlGeo.toString())
         .then(res => res.json())
         .then(geoData => {
             if (geoData && geoData.results && geoData.results.length > 0) {
                 resultado.municipio = geoData.results[0].name || "Zona Rural";
                 resultado.provincia = geoData.results[0].admin1 || "España";
             }
-            return fetch(urlClima);
+            return fetch(urlClima.toString());
         })
         .then(res => {
-            if (!res.ok) throw new Error("El satélite histórico de Open-Meteo no responde. Código: " + res.status);
+            if (!res.ok) throw new Error("Código de respuesta de satélite: " + res.status);
             return res.json();
         })
         .then(data => {
             if (data && data.hourly && data.hourly.time) {
-                const targetTimestamp = fecha + "T" + horaCorte.substring(0, 5);
+                const targetTimestamp = fecha + "T" + horaCorte;
                 const idx = data.hourly.time.indexOf(targetTimestamp);
                 
                 if (idx !== -1) {
@@ -55,20 +65,18 @@
                 }
             }
             
-            // Pintamos el JSON real directamente en la pantalla de texto para que lo veas
             document.getElementById('pantalla').innerText = JSON.stringify(resultado, null, 4);
-            
-            // Además enviamos el mensaje al archivo padre por si InfinityFree lo escucha
             window.parent.postMessage(resultado, "*");
         })
         .catch(err => {
-            document.getElementById('pantalla').innerText = "Fallo de conexión real de internet: " + err.message;
+            document.getElementById('pantalla').innerText = "Fallo de comunicación: " + err.message;
             window.parent.postMessage({ error: true, mensaje: err.message }, "*");
         });
 })();
 </script>
 </body>
 </html>
+
 
 
 
