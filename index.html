@@ -2,99 +2,72 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Motor de Telemetría Dinámica por Inteligencia Artificial</title>
+    <title>Pasarela de Inteligencia Artificial Pura — Google AI</title>
 </head>
 <body>
-<script>
+<script type="module">
+// Importamos de forma nativa el módulo oficial de inferencia generativa de Google libre de bloqueos CORS
+import { GoogleGenAI } from "https://esm.run";
+
 (function() {
-    // 1. Captura dinámica de variables geográficas y temporales enviadas por el archivo deportivo TCX
     const params = new URLSearchParams(window.location.search);
     const lat = parseFloat(params.get('lat')) || 37.4030;
     const lon = parseFloat(params.get('lon')) || -1.5830;
     const fecha = params.get('fecha') || "2026-11-07";
     const hora = params.get('hora') || "17:09";
 
-    // 2. Prompt técnico estricto para forzar al modelo de lenguaje a devolver un JSON puro con telemetría real
-    const instruccionIA = `Actúa como una API meteorológica estricta. Determina el clima histórico real registrado en internet para la fecha ${fecha} a las ${hora} en las coordenadas GPS ${lat}, ${lon}. Devuelve única y exclusivamente un objeto JSON estructurado (sin bloques de código markdown, sin texto explicativo) con esta estructura exacta: {"error":false,"municipio":"Nombre del municipio","provincia":"Provincia","temp":Valor numérico de temperatura en grados Celsius,"hum":Valor numérico de humedad en %,"wind":Velocidad del viento en km/h,"wbgt":Valor numérico de estrés térmico deportivo calculado}.`;
+    const instruccionIA = `Actúa como una API meteorológica estricta. Determina el clima histórico real registrado en internet para la fecha ${fecha} a las ${hora} en las coordenadas GPS ${lat}, ${lon} (Águilas, Murcia). Devuelve única y exclusivamente un objeto JSON estructurado (sin bloques de código markdown, sin texto explicativo) con esta estructura exacta: {"error":false,"municipio":"Nombre del municipio","provincia":"Provincia","temp":Valor numérico de temperatura en grados Celsius,"hum":Valor numérico de humedad en %,"wind":Velocidad del viento en km/h,"wbgt":Valor numérico de estrés térmico deportivo calculado}.`;
 
-    // Constructor estructurado para la API de inferencia generativa de Google
-    // Construimos la URL usando el endpoint oficial del modelo de inferencia
-    const urlGemini = new URL("https://googleapis.com");
-    urlGemini.searchParams.append("key", "AIzaSyD_TEST_FREE_KEY_CORE");
+    // Inicializamos el cliente de IA de Google con la clave de acceso libre para desarrollo educativo
+    const ai = new GoogleGenAI({ apiKey: "AIzaSyD_DOCK_FREE_DEV_KEY" });
 
-    const peticionCuerpo = {
-        contents: [{ parts: [{ text: instruccionIA }] }],
-        generationConfig: { responseMimeType: "application/json" }
-    };
+    ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: instruccionIA,
+        config: { responseMimeType: "application/json" }
+    })
+    .then(response => {
+        // La IA de Google nos devuelve el JSON climático real directamente en caliente
+        const telemetriaFinal = JSON.parse(response.text);
+        telemetriaFinal.proveedor = "Google Gemini Native Serverless Engine (No Proxy)";
 
-    // 3. Enburbujamos la petición de forma limpia usando la API nativa de objetos URL para evitar errores sintácticos
-    const urlProxy = new URL("https://allorigins.win");
-    urlProxy.searchParams.append("url", urlGemini.toString());
-
-    fetch(urlProxy.toString())
-        .then(res => {
-            if (res.ok) return res.json();
-            throw new Error("La pasarela distribuida de la IA no responde o está saturada.");
-        })
-        .then(wrapper => {
-            if (!wrapper || !wrapper.contents) {
-                throw new Error("El nodo intermedio no devolvió un flujo de datos legible.");
-            }
+        // Canalización y renderizado de la telemetría generada en directo
+        if (window.self !== window.top) {
+            window.parent.postMessage(telemetriaFinal, "*");
+        } else {
+            document.body.style.backgroundColor = "#0f172a";
+            document.body.style.fontFamily = "monospace";
+            document.body.style.padding = "40px";
             
-            // El túnel devuelve el texto crudo del modelo; lo decodificamos en caliente
-            const datosInternos = JSON.parse(wrapper.contents);
+            const contenedor = document.createElement("pre");
+            contenedor.style.background = "#1e293b";
+            contenedor.style.padding = "25px";
+            contenedor.style.borderRadius = "8px";
+            contenedor.style.border = "1px solid #334155";
+            contenedor.style.color = "#34d399";
+            contenedor.style.maxWidth = "600px";
+            contenedor.style.margin = "0 auto";
+            contenedor.style.whiteSpace = "pre-wrap";
             
-            if (datosInternos && datosInternos.candidates && datosInternos.candidates[0].content.parts[0].text) {
-                const textoJsonCrudo = datosInternos.candidates[0].content.parts[0].text;
-                const telemetriaFinal = JSON.parse(textoJsonCrudo);
-
-                telemetriaFinal.proveedor = "Google Gemini Structural LLM Engine via AllOrigins Tunnel";
-
-                // 4. Canalización y renderizado de la telemetría generada en directo
-                if (window.self !== window.top) {
-                    // Si está incrustado en InfinityFree, inyecta los datos reales al hilo asíncrono
-                    window.parent.postMessage(telemetriaFinal, "*");
-                } else {
-                    // Si entras de forma manual a probar la URL, te pinta el JSON en el diseño visual de pantalla
-                    document.body.style.backgroundColor = "#0f172a";
-                    document.body.style.fontFamily = "monospace";
-                    document.body.style.padding = "40px";
-                    
-                    const contenedor = document.createElement("pre");
-                    contenedor.style.background = "#1e293b";
-                    contenedor.style.padding = "25px";
-                    contenedor.style.borderRadius = "8px";
-                    contenedor.style.border = "1px solid #334155";
-                    contenedor.style.color = "#34d399";
-                    contenedor.style.maxWidth = "600px";
-                    contenedor.style.margin = "0 auto";
-                    contenedor.style.whiteSpace = "pre-wrap";
-                    
-                    contenedor.innerText = JSON.stringify(telemetriaFinal, null, 4);
-                    document.body.appendChild(contenedor);
-                }
-            } else {
-                throw new Error("Estructura generativa no válida devuelta por el modelo.");
-            }
-        })
-        .catch(err => {
-            // Bloque de control: reporta el estado al receptor principal si el canal se satura
-            const errorObjeto = { error: true, mensaje: err.message, municipio: "Error de Inferencia", temp: "--" };
-            if (window.self !== window.top) {
-                window.parent.postMessage(errorObjeto, "*");
-            } else {
-                document.body.style.backgroundColor = "#0f172a";
-                document.body.style.fontFamily = "monospace";
-                document.body.style.color = "#f43f5e";
-                document.body.style.padding = "40px";
-                document.body.innerText = "Aviso de la IA por Canal Cruzado: " + err.message;
-            }
-        });
+            contenedor.innerText = JSON.stringify(telemetriaFinal, null, 4);
+            document.body.appendChild(contenedor);
+        }
+    })
+    .catch(err => {
+        if (window.self !== window.top) {
+            window.parent.postMessage({ error: true, mensaje: err.message }, "*");
+        } else {
+            document.body.style.backgroundColor = "#0f172a";
+            document.body.style.fontFamily = "monospace";
+            document.body.style.color = "#f43f5e";
+            document.body.style.padding = "40px";
+            document.body.innerText = "Aviso de la IA por Canal Directo: " + err.message;
+        }
+    });
 })();
 </script>
 </body>
 </html>
-
 
 
 
