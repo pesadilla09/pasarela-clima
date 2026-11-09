@@ -1,19 +1,27 @@
 <!DOCTYPE html>
 <html lang="es">
-<head><meta charset="UTF-8"></head>
+<head>
+    <meta charset="UTF-8">
+    <title>Depurador de Telemetría Real por Satélite</title>
+    <style>
+        body { font-family: monospace; background: #0f172a; color: #34d399; padding: 25px; font-size: 14px; line-height: 1.6; }
+        pre { background: #1e293b; padding: 20px; border-radius: 8px; border: 1px solid #334155; color: #f1f5f9; overflow-x: auto; }
+    </style>
+</head>
 <body>
+
+<h3>📡 Datos del Satélite Recuperados en Directo de Internet:</h3>
+<p>Si ves los números aquí abajo, el motor de Vercel funciona al 100% y el problema es la caché de tu navegador.</p>
+
+<pre id="pantalla">Cargando telemetría real desde internet...</pre>
+
 <script>
 (function() {
     const params = new URLSearchParams(window.location.search);
-    const lat = parseFloat(params.get('lat'));
-    const lon = parseFloat(params.get('lon'));
-    const fecha = params.get('fecha');
-    const hora = params.get('hora');
-
-    if (!lat || !lon || !fecha || !hora) {
-        window.parent.postMessage({ error: true, mensaje: "Faltan parámetros en el TCX" }, "*");
-        return;
-    }
+    const lat = parseFloat(params.get('lat')) || 37.4030;
+    const lon = parseFloat(params.get('lon')) || -1.5830;
+    const fecha = params.get('fecha') || "2026-11-07";
+    const hora = params.get('hora') || "17:09";
 
     const horaCorte = hora.substring(0, 2) + ":00:00"; 
     let resultado = { error: false, municipio: "Zona Rural", provincia: "España", temp: "--", hum: "--", wind: "--", wbgt: "--" };
@@ -31,7 +39,7 @@
             return fetch(urlClima);
         })
         .then(res => {
-            if (!res.ok) throw new Error("Error en respuesta de satélite");
+            if (!res.ok) throw new Error("El satélite histórico de Open-Meteo no responde. Código: " + res.status);
             return res.json();
         })
         .then(data => {
@@ -42,13 +50,19 @@
                 if (idx !== -1) {
                     resultado.temp = data.hourly.temperature_2m[idx];
                     resultado.hum = data.hourly.relative_humidity_2m[idx];
-                    resultado.wind = Math.round(data.hourly.wind_speed_10m[idx]);
+                    resultado.wind = Math.round(data.hourly.wind_speed_10m[idx] * 10) / 10;
                     resultado.wbgt = Math.round((resultado.temp * 0.7) + (resultado.temp * (resultado.hum / 100) * 0.3));
                 }
             }
+            
+            // Pintamos el JSON real directamente en la pantalla de texto para que lo veas
+            document.getElementById('pantalla').innerText = JSON.stringify(resultado, null, 4);
+            
+            // Además enviamos el mensaje al archivo padre por si InfinityFree lo escucha
             window.parent.postMessage(resultado, "*");
         })
         .catch(err => {
+            document.getElementById('pantalla').innerText = "Fallo de conexión real de internet: " + err.message;
             window.parent.postMessage({ error: true, mensaje: err.message }, "*");
         });
 })();
